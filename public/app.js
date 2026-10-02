@@ -1,0 +1,1096 @@
+/* HART Communicator — app logic */
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const hex = b => Array.from(b, x => x.toString(16).padStart(2,'0').toUpperCase()).join(' ');
+const hx = (n, w=2) => '0x' + n.toString(16).toUpperCase().padStart(w,'0');
+const isAndroid = /Android/.test(navigator.userAgent);
+
+/* ================= Log ================= */
+const logEl = $('log'); const logLines = [];
+function log(msg, cls){
+  const line = `${new Date().toISOString().slice(11,23)}  ${msg}`;
+  logLines.push(line);
+  if (logLines.length > 800) logLines.splice(0, 200);
+  const div = document.createElement('div');
+  if (cls) div.className = cls;
+  div.textContent = line;
+  logEl.appendChild(div);
+  while (logEl.childNodes.length > 600) logEl.removeChild(logEl.firstChild);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+/* ================= HART tables ================= */
+// HART Common Table 2 – engineering unit codes (subset)
+const UNITS = {
+  1:'inH2O (68°F)',2:'inHg (0°C)',3:'ftH2O (68°F)',4:'mmH2O (68°F)',5:'mmHg (0°C)',6:'psi',7:'bar',8:'mbar',
+  9:'g/cm²',10:'kg/cm²',11:'Pa',12:'kPa',13:'torr',14:'atm',15:'ft³/min',16:'gal/min',17:'L/min',
+  18:'impgal/min',19:'m³/h',20:'ft/s',21:'m/s',22:'gal/s',23:'Mgal/d',24:'L/s',25:'ML/d',26:'ft³/s',
+  27:'ft³/d',28:'m³/s',29:'m³/d',30:'impgal/h',31:'impgal/d',32:'°C',33:'°F',34:'°R',35:'K',36:'mV',
+  37:'Ω',38:'Hz',39:'mA',40:'gal',41:'L',42:'impgal',43:'m³',44:'ft',45:'m',46:'bbl',47:'in',48:'cm',
+  49:'mm',50:'min',51:'s',52:'h',53:'d',54:'cSt',55:'cP',56:'µmho',57:'%',58:'V',59:'pH',60:'g',61:'kg',
+  62:'t',63:'lb',64:'short ton',65:'long ton',66:'mS/cm',67:'µS/cm',68:'N',69:'N·m',70:'g/s',71:'g/min',
+  72:'g/h',73:'kg/s',74:'kg/min',75:'kg/h',76:'kg/d',77:'t/min',78:'t/h',79:'t/d',80:'lb/s',81:'lb/min',
+  82:'lb/h',83:'lb/d',90:'SGU',91:'g/cm³',92:'kg/m³',93:'lb/gal',94:'lb/ft³',95:'g/mL',96:'kg/L',97:'g/L',
+  145:'inH2O (60°F)',237:'MPa',238:'inH2O (4°C)',239:'mmH2O (4°C)',250:'Not used',251:'None',252:'Unknown',253:'Special'
+};
+const unitName = c => c == null ? '' : (UNITS[c] ?? (c >= 240 && c <= 249 ? `Mfr unit ${c}` : `Unit code ${c}`));
+
+const MFR = {0x11:'Endress+Hauser',0x17:'Honeywell',0x1A:'ABB',0x26:'Rosemount',0x2A:'Siemens',0x37:'Yokogawa',0x45:'Krohne',0x62:'VEGA'};
+const TRANSFER = {0:'Linear',1:'Square root',4:'Special curve',250:'Not used',251:'None'};
+const ALARM = {0:'High',1:'Low',239:'Hold last value',250:'Not used',251:'None'};
+const WRITEPROT = {0:'Off',1:'On',250:'Not used',251:'None'};
+const RESP_CMD = {
+  6:{2:'Invalid poll address',12:'Invalid loop current mode'},
+  35:{9:'Lower range value too high',10:'Lower range value too low',11:'Upper range value too high',12:'Upper range value too low',13:'Both range values out of limits',14:'Span is below the recommended minimum',29:'Invalid span'},
+  36:{9:'Applied process too high',10:'Applied process too low',14:'Span is below the recommended minimum',29:'Invalid span'},
+  37:{9:'Applied process too high',10:'Applied process too low',14:'Upper range value pushed beyond limits',29:'Invalid span'},
+  40:{3:'Current too high',4:'Current too low',11:'Loop current is disabled (multidrop)'},
+  43:{9:'Applied process too high',10:'Applied process too low'},
+  44:{2:'Units not supported by this device'},
+  45:{3:'Trim correction too large',4:'Trim correction too small',9:'Output is not fixed at 4 mA',11:'Loop current is disabled (multidrop)'},
+  51:{2:'That variable cannot be mapped there',5:'Too few data bytes'},
+  82:{9:'Applied process too high',10:'Applied process too low'},
+  46:{3:'Trim correction too large',4:'Trim correction too small',9:'Output is not fixed at 20 mA',11:'Loop current is disabled (multidrop)'}
+};
+const respText = (n, c) => (RESP_CMD[n] && RESP_CMD[n][c]) || RESP[c] || `response code ${c}`;
+const RESP = {0:'OK',1:'Undefined',2:'Invalid selection',3:'Value too large',4:'Value too small',5:'Too few data bytes',
+  6:'Device-specific error',7:'Write-protected',8:'Warning',16:'Access restricted',32:'Device busy',
+  33:'Delayed response initiated',34:'Delayed response running',35:'Delayed response dead',36:'Delayed response conflict',64:'Command not implemented'};
+const STATUS_BITS = [
+  [0x80,'Device malfunction','The device has detected an internal fault.','bad'],
+  [0x40,'Configuration changed','Set after any configuration write. Cleared by a host acknowledging it (Command 38).','warn'],
+  [0x20,'Cold start','The device has restarted or lost power.','warn'],
+  [0x10,'More status available','Extra diagnostics are available (shown below if read).','warn'],
+  [0x08,'Loop current fixed','The output is not following the process, for example in loop test or multidrop.','warn'],
+  [0x04,'Loop current saturated','The output is at its upper or lower limit.','warn'],
+  [0x02,'Non-primary variable out of limits','SV, TV or QV is outside the sensor limits.','warn'],
+  [0x01,'Primary variable out of limits','The PV is outside the sensor limits.','bad']
+];
+const EXT_BITS = [
+  [0x01,'Maintenance required'],[0x02,'Device variable alert'],[0x04,'Critical power failure'],
+  [0x08,'Failure'],[0x10,'Out of specification'],[0x20,'Function check']
+];
+
+/* ================= Data helpers ================= */
+const f32 = (b, i) => { const v = new DataView(Uint8Array.from(b.slice(i, i+4)).buffer).getFloat32(0, false); return v; };
+function fmt(v){
+  if (v == null || !isFinite(v)) return '—';
+  const a = Math.abs(v);
+  return v.toFixed(a >= 1000 ? 1 : a >= 100 ? 2 : a >= 10 ? 3 : 4);
+}
+function unpackAscii(bytes){
+  let out = '';
+  for (let i = 0; i + 2 < bytes.length; i += 3){
+    const v = (bytes[i] << 16) | (bytes[i+1] << 8) | bytes[i+2];
+    for (let s = 18; s >= 0; s -= 6){ let c = (v >> s) & 0x3F; c |= ((~c & 0x20) << 1); out += String.fromCharCode(c); }
+  }
+  return out.replace(/@+$/,'').trimEnd();
+}
+const latin1 = b => String.fromCharCode(...b).replace(/\0/g,'').trim();
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function fillTable(el, rows){
+  el.innerHTML = rows.filter(r => r[1] !== undefined && r[1] !== '').map(([k,v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
+}
+
+/* ================= Transports ================= */
+let transport = null, rxBuf = [];
+
+class SerialTransport {
+  async open(){
+    this.port = await navigator.serial.requestPort();
+    const info = this.port.getInfo();
+    await this.port.open({ baudRate:1200, dataBits:8, parity:'odd', stopBits:1, bufferSize:1024 });
+    log(`SERIAL opened VID=${info.usbVendorId!=null?hx(info.usbVendorId,4):'—'} 1200 8O1`);
+    this.reader = this.port.readable.getReader();
+    this.writer = this.port.writable.getWriter();
+    this.running = true; this.readLoop();
+    this.label = 'Web Serial';
+  }
+  async readLoop(){
+    try { while (this.running){ const { value, done } = await this.reader.read(); if (done) break; if (value) rxBuf.push(...value); } }
+    catch(e){ if (this.running){ log(`SERIAL read error: ${e.message}`, 'er'); lostConnection(); } }
+  }
+  async write(b){ await this.writer.write(b); }
+  async setRTS(on){ try { await this.port.setSignals({ requestToSend:on }); } catch(e){} }
+  async close(){
+    this.running = false;
+    try { await this.reader.cancel(); } catch(e){}
+    try { this.reader.releaseLock(); this.writer.releaseLock(); } catch(e){}
+    try { await this.port.close(); } catch(e){}
+  }
+}
+
+class UsbCp210xTransport {
+  async open(){
+    this.dev = await navigator.usb.requestDevice({ filters:[{ vendorId:0x10C4 }] });
+    const d = this.dev;
+    await d.open();
+    if (!d.configuration) await d.selectConfiguration(1);
+    const iface = d.configuration.interfaces[0];
+    this.ifNum = iface.interfaceNumber;
+    await d.claimInterface(this.ifNum);
+    const eps = iface.alternate.endpoints;
+    this.epIn = eps.find(e => e.direction==='in' && e.type==='bulk').endpointNumber;
+    this.epOut = eps.find(e => e.direction==='out' && e.type==='bulk').endpointNumber;
+    await this.ctrl(0x00, 0x0001);                                            // IFC_ENABLE
+    const baud = new ArrayBuffer(4); new DataView(baud).setUint32(0, 1200, true);
+    await this.ctrl(0x1E, 0, baud);                                           // SET_BAUDRATE
+    await this.ctrl(0x03, 0x0810);                                            // 8 data, odd, 1 stop
+    await this.ctrl(0x12, 0x000F);                                            // PURGE
+    log(`USB opened ${d.productName||'CP210x'} PID=${hx(d.productId,4)} 1200 8O1`);
+    this.running = true; this.readLoop();
+    this.label = 'WebUSB';
+  }
+  ctrl(req, value, data){
+    const s = { requestType:'vendor', recipient:'interface', request:req, value, index:this.ifNum };
+    return data ? this.dev.controlTransferOut(s, data) : this.dev.controlTransferOut(s);
+  }
+  async readLoop(){
+    try { while (this.running){ const r = await this.dev.transferIn(this.epIn, 64); if (r.data && r.data.byteLength) rxBuf.push(...new Uint8Array(r.data.buffer)); } }
+    catch(e){ if (this.running){ log(`USB read error: ${e.message}`, 'er'); lostConnection(); } }
+  }
+  async write(b){ await this.dev.transferOut(this.epOut, b); }
+  async setRTS(on){ try { await this.ctrl(0x07, on ? 0x0202 : 0x0200); } catch(e){} }
+  async close(){
+    this.running = false;
+    try { await this.ctrl(0x00, 0x0000); } catch(e){}
+    try { await this.dev.releaseInterface(this.ifNum); } catch(e){}
+    try { await this.dev.close(); } catch(e){}
+  }
+}
+
+/* ================= HART link layer ================= */
+let chain = Promise.resolve();
+const exclusive = fn => { const p = chain.then(fn, fn); chain = p.catch(() => {}); return p; };
+
+let dev = null;          // identified device: { longAddr, preambles, ... }
+let preambles = 10;
+
+function frame(delim, addr, cmd, data=[]){
+  const body = [delim, ...addr, cmd, data.length, ...data];
+  const chk = body.reduce((a,b) => a ^ b, 0);
+  return new Uint8Array([...Array(preambles).fill(0xFF), ...body, chk]);
+}
+
+function parseFrame(buf){
+  for (let i = 2; i < buf.length; i++){
+    const d = buf[i];
+    if ((d !== 0x06 && d !== 0x86) || buf[i-1] !== 0xFF || buf[i-2] !== 0xFF) continue;
+    const addrLen = d & 0x80 ? 5 : 1;
+    const bcIdx = i + 1 + addrLen + 1;
+    if (buf.length <= bcIdx) return { incomplete:true };
+    const bc = buf[bcIdx], end = bcIdx + 1 + bc;
+    if (buf.length <= end) return { incomplete:true };
+    const fr = buf.slice(i, end + 1);
+    const chk = fr.slice(0,-1).reduce((a,b) => a ^ b, 0);
+    return { cmd:buf[i+1+addrLen], status:[buf[bcIdx+1], buf[bcIdx+2]], data:buf.slice(bcIdx+3, end), chkOk: chk === fr[fr.length-1] };
+  }
+  return null;
+}
+
+async function transact(fr, { quiet=false, timeout=900 } = {}){
+  if (!transport) throw new Error('Not connected');
+  rxBuf = [];
+  await transport.setRTS(true);
+  if (!quiet) log(`TX ${hex(fr)}`, 'tx');
+  await transport.write(fr);
+  await sleep(Math.ceil(fr.length * 11 / 1.2) + 15);   // 11 bits/byte at 1200 baud
+  await transport.setRTS(false);
+  const t0 = performance.now();
+  while (performance.now() - t0 < timeout){
+    const r = parseFrame(rxBuf);
+    if (r && !r.incomplete){ if (!quiet) log(`RX ${hex(rxBuf)}`, 'rx'); return r; }
+    await sleep(20);
+  }
+  log(rxBuf.length ? `RX invalid ${hex(rxBuf)}` : 'RX no reply', 'er');
+  return null;
+}
+
+// Send a command with retries; returns { data, status } or throws
+async function cmd(number, data=[], opts={}){
+  return exclusive(async () => {
+    let last = 'No reply', dr = 0;
+    for (let attempt = 0; attempt < 3; attempt++){
+      const fr = dev ? frame(0x82, dev.longAddr, number, data) : frame(0x02, [0x80 | (opts.poll & 0x3F)], number, data);
+      const r = await transact(fr, opts);
+      if (!r){ continue; }
+      if (!r.chkOk){ last = 'Checksum error'; continue; }
+      if (r.cmd !== number){ last = `Reply to wrong command (${r.cmd})`; continue; }
+      const s0 = r.status[0];
+      if (s0 & 0x80){ last = `Communication error ${hx(s0)}`; continue; }
+      if (s0 === 32){ last = 'Device busy'; await sleep(300); continue; }
+      if ((s0 === 33 || s0 === 34) && dr++ < 60){ last = 'Delayed response still running'; attempt--; await sleep(500); continue; }
+      if (s0 !== 0 && s0 !== 8 && s0 !== 14) throw new Error(`Command ${number}: ${respText(number, s0)}`);
+      handleDeviceStatus(r.status[1]);
+      if (s0) r.warning = respText(number, s0);
+      return r;
+    }
+    throw new Error(`Command ${number}: ${last}`);
+  });
+}
+
+/* ================= Commands ================= */
+async function identify(poll){
+  dev = null;
+  const r = await cmd(0, [], { poll });
+  const d = r.data;
+  if (d.length < 12 || d[0] !== 0xFE) throw new Error('Unexpected Command 0 reply');
+  const rev = d[4];
+  const info = {
+    poll, rev,
+    longAddr: [0x80 | (d[1] & 0x3F), d[2], d[9], d[10], d[11]],
+    mfrId: rev >= 7 && d.length >= 19 ? (d[17] << 8) | d[18] : d[1],
+    devType: rev >= 7 ? (d[1] << 8) | d[2] : d[2],
+    devRev: d[5], swRev: d[6], hwRev: d[7] >> 3,
+    devId: hex(d.slice(9,12)),
+    minPre: d[3],
+    nVars: d.length > 13 ? d[13] : null,
+    cfgCount: d.length > 15 ? (d[14] << 8) | d[15] : null,
+    ext: d.length > 16 ? d[16] : null
+  };
+  preambles = Math.max(+info.minPre || 5, 5, preambles);
+  dev = info;
+  return info;
+}
+
+async function loadDetails(){
+  const out = {};
+  const tryCmd = async (n, fn) => { try { fn((await cmd(n)).data); } catch(e){ log(e.message, 'er'); } };
+  await tryCmd(13, d => { out.tag = unpackAscii(d.slice(0,6)); out.desc = unpackAscii(d.slice(6,18)); if (d.length >= 21) out.date = `${String(d[18]).padStart(2,'0')}/${String(d[19]).padStart(2,'0')}/${1900 + d[20]}`; });
+  if (dev.rev >= 6) await tryCmd(20, d => { out.longTag = latin1(d.slice(0,32)); });
+  await tryCmd(12, d => { out.msg = unpackAscii(d.slice(0,24)); });
+  await tryCmd(16, d => { if (d.length >= 3) out.fan = (d[0] << 16) | (d[1] << 8) | d[2]; });
+  await tryCmd(15, d => {
+    out.range = {
+      alarm: d[0], transfer: d[1], units: d[2],
+      urv: f32(d,3), lrv: f32(d,7), damping: f32(d,11), wp: d[15],
+      analogFlags: d.length > 17 ? d[17] : null
+    };
+  });
+  await tryCmd(48, d => { out.cmd48 = d; });
+  return out;
+}
+
+/* ================= UI rendering ================= */
+let lastDeviceStatus = null;
+let cmd48Data = null;
+
+function handleDeviceStatus(s){
+  if (s === lastDeviceStatus) return;
+  lastDeviceStatus = s;
+  renderStatus();
+}
+
+function renderStatus(){
+  const list = $('flags'); list.innerHTML = '';
+  const add = (title, sub, cls) => {
+    const li = document.createElement('li'); li.className = cls;
+    li.textContent = title;
+    if (sub){ const s = document.createElement('small'); s.textContent = sub; li.appendChild(s); }
+    list.appendChild(li);
+  };
+  const s = lastDeviceStatus ?? 0;
+  STATUS_BITS.forEach(([bit, t, sub, cls]) => { if (s & bit) add(t, sub, cls); });
+  const ext = cmd48Data && cmd48Data.length > 6 ? cmd48Data[6] : dev?.ext;
+  if (ext) EXT_BITS.forEach(([bit, t]) => { if (ext & bit) add(t, 'Extended device status (NAMUR NE 107 category)', bit & 0x0C ? 'bad' : 'warn'); });
+  if (!list.children.length) add('No status flags set', 'The device reports normal operation.', 'ok');
+  if (cmd48Data && cmd48Data.length) add(`Additional status (Command 48)`, hex(cmd48Data) + '. These bytes are manufacturer-specific; their meaning is in the device manual.', '');
+  $('statusCard').classList.remove('hidden');
+}
+
+function renderDevice(info, det){
+  const mfr = MFR[info.mfrId] || `Manufacturer ${hx(info.mfrId)}`;
+  $('devName').textContent = det.longTag || det.tag || mfr;
+  $('devSub').textContent = `${mfr}, device type ${hx(info.devType, info.rev >= 7 ? 4 : 2)}, HART ${info.rev}`;
+  const shown = det.longTag || det.tag || mfr;
+  $('liveTag').textContent = shown;
+  $('barDevice').textContent = `${shown}, ${mfr}`;
+  document.body.classList.add('has-device');
+  fillTable($('devTable'), [
+    ['Tag', det.tag], ['Long tag', det.longTag], ['Descriptor', det.desc], ['Message', det.msg], ['Date', det.date],
+    ['Poll address', info.poll], ['Device ID', info.devId],
+    ['Device / software / hardware rev', `${info.devRev} / ${info.swRev} / ${info.hwRev}`],
+    ['Final assembly number', det.fan], ['Device variables', info.nVars],
+    ['Configuration change counter', info.cfgCount]
+  ]);
+  $('devCard').classList.remove('hidden');
+
+  if (det.range){
+    const r = det.range, u = unitName(r.units);
+    fillTable($('rangeTable'), [
+      ['Lower range value (4 mA)', `${fmt(r.lrv)} ${u}`],
+      ['Upper range value (20 mA)', `${fmt(r.urv)} ${u}`],
+      ['Damping', `${fmt(r.damping)} s`],
+      ['Transfer function', TRANSFER[r.transfer] ?? `Code ${r.transfer}`],
+      ['Alarm direction', ALARM[r.alarm] ?? `Code ${r.alarm}`],
+      ['Write protection', WRITEPROT[r.wp] ?? `Code ${r.wp}`]
+    ]);
+    $('rangeCard').classList.remove('hidden');
+  }
+  cmd48Data = det.cmd48 || null;
+  renderStatus();
+  lastDet = det;
+  fillForms(det);
+  $('dvCard').classList.remove('hidden');
+}
+
+/* ================= Live polling ================= */
+let live = false, liveRunning = false, lastLiveOk = 0, liveFails = 0;
+
+async function liveLoop(){
+  if (liveRunning) return;
+  liveRunning = true;
+  $('liveCard').classList.remove('hidden');
+  while (live && transport && dev){
+    const quiet = !$('logLive').checked;
+    try {
+      const r3 = await cmd(3, [], { quiet });
+      const d = r3.data;
+      const vars = [];
+      for (let i = 4; i + 4 < d.length; i += 5) vars.push({ unit:d[i], val:f32(d, i+1) });
+      let pct = null;
+      try { const r2 = await cmd(2, [], { quiet }); pct = f32(r2.data, 4); } catch(e){}
+      renderLive(f32(d,0), pct, vars);
+      if (dvList && $('dvAuto').checked && !$('dvCard').classList.contains('hidden')) await readDvValues(false, quiet);
+      if (st && $('stDetails').open){
+        try {
+          const r9 = await cmd(9, [st.dv], { quiet });
+          const v = r9.data;   // [ext status][dv code][class][units][value x4][status]
+          $('stLive').textContent = v.length >= 8 ? `${fmt(f32(v, 4))} ${unitName(v[3])}` : '—';
+        } catch(e){ $('stLive').textContent = '—'; }
+      }
+      lastLiveOk = Date.now(); liveFails = 0;
+    } catch(e){
+      liveFails++;
+      if (liveFails === 1 || liveFails % 5 === 0) log(`Live update failed: ${e.message}`, 'er');
+      $('pvBox').classList.add('stale');
+      if (liveFails >= 3) setPill('No reply from device', 'busy');
+    }
+    await sleep(400);
+  }
+  liveRunning = false;
+}
+
+function renderLive(mA, pct, vars){
+  setPill(`Connected via ${transport.label}`, 'on');
+  $('pvBox').classList.remove('stale');
+  const pv = vars[0];
+  $('pvVal').textContent = pv ? fmt(pv.val) : '—';
+  $('pvUnit').textContent = pv ? unitName(pv.unit) : '';
+  $('mA').textContent = `${fmt(mA)} mA`;
+  $('pct').textContent = pct == null ? '— %' : `${fmt(pct)} %`;
+  // Gauge scale runs 3–22 mA so NAMUR NE 43 fault zones are visible
+  const pos = m => Math.min(100, Math.max(0, (m - 3) / 19 * 100));
+  const p4 = pos(4), pm = isFinite(mA) ? pos(mA) : p4;
+  $('pctFill').style.width = Math.max(0, pm - p4) + '%';
+  $('mANeedle').style.left = pm + '%';
+  $('mANeedle').classList.toggle('on', isFinite(mA));
+  const names = ['Primary variable (PV)','Secondary variable (SV)','Tertiary variable (TV)','Quaternary variable (QV)'];
+  fillTable($('dynTable'), vars.slice(1).map((v, i) => [names[i+1], isFinite(v.val) ? `${fmt(v.val)} ${unitName(v.unit)}` : 'Not assigned']));
+}
+
+setInterval(() => {
+  if (!live || !lastLiveOk) { $('liveAge').textContent = ''; return; }
+  const s = Math.round((Date.now() - lastLiveOk) / 1000);
+  $('liveAge').textContent = s <= 2 ? 'Live' : `Updated ${s} s ago`;
+}, 1000);
+
+/* ================= Connection flow ================= */
+function setPill(text, cls){ const p = $('pill'); p.textContent = text.startsWith('Connected via ') ? 'Connected' : text; p.title = text; p.className = 'pill' + (cls ? ' ' + cls : ''); }
+function note(text, bad){ $('connNote').textContent = text; $('connNote').className = 'note' + (bad ? ' bad' : ''); }
+
+function explain(e){
+  if (e.name === 'NotFoundError') return 'No modem chosen. Check it is plugged in, then pick it from the list.';
+  if (e.name === 'SecurityError') return 'The browser blocked hardware access on this page. Open it in its own tab.';
+  if (e.name === 'InvalidStateError') return 'The modem is already open in another tab or app. Close that and try again.';
+  if (e.name === 'NetworkError' || /claim|busy|access/i.test(e.message)) return 'The modem is in use or owned by a driver. On Windows, choose Web Serial.';
+  return e.message;
+}
+
+function pickMethod(){
+  const m = $('method').value;
+  if (m !== 'auto') return m;
+  if (isAndroid && 'usb' in navigator) return 'usb';
+  if ('serial' in navigator) return 'serial';
+  return 'usb';
+}
+
+async function connect(){
+  const m = pickMethod();
+  if (m === 'usb' && !('usb' in navigator)) return note('WebUSB is not available in this browser. Use Chrome or Edge.', true);
+  if (m === 'serial' && !('serial' in navigator)) return note('Web Serial is not available in this browser. Try WebUSB.', true);
+  const t = m === 'usb' ? new UsbCp210xTransport() : new SerialTransport();
+  try {
+    await t.open();
+    transport = t;
+    setPill(`Connected via ${t.label}`, 'on');
+    $('btnConnect').disabled = true; $('btnScan').disabled = false; $('btnDisc').disabled = false;
+    await connectDevice(+$('addr').value);
+  } catch(e){
+    log(`Connect failed: ${e.name}: ${e.message}`, 'er');
+    note(explain(e), true);
+    try { await t.close(); } catch(_){}
+  }
+}
+
+async function connectDevice(poll){
+  live = false;
+  while (liveRunning) await sleep(50);
+  $('scanList').innerHTML = '';
+  dev = null; lastDeviceStatus = null; cmd48Data = null; st = null; $('stBody').classList.add('hidden');
+  dvList = null; dvMap = null; $('dvBody').classList.add('hidden'); $('dvList').innerHTML = ''; $('dvLoad').textContent = 'Load';
+  $('dvHint').textContent = 'Reads every device variable with its type, live value, status and limits (HART Commands 9, 50 and 54).';
+  setPill('Reading device…', 'busy');
+  document.body.classList.remove('has-device');
+  $('barDevice').textContent = `Reading poll address ${poll}…`;
+  note(`Reading the device at poll address ${poll}…`);
+  try {
+    const info = await identify(poll);
+    log(`Found ${MFR[info.mfrId] || hx(info.mfrId)} type ${hx(info.devType,4)} ID ${info.devId}, HART ${info.rev}`);
+    const det = await loadDetails();
+    renderDevice(info, det);
+    note(`Connected to the device at poll address ${poll}. Changes are only written when you confirm them under Configure.`);
+    live = true; $('btnLive').textContent = 'Pause';
+    liveLoop();
+  } catch(e){
+    log(e.message, 'er');
+    setPill(`Connected via ${transport?.label || ''}`, 'on');
+    $('barDevice').textContent = 'No device';
+    note(`No device answered at poll address ${poll}. Check the clips and loop resistance (250 Ω minimum), or scan addresses 0–15.`, true);
+  }
+}
+
+async function scan(){
+  live = false;
+  while (liveRunning) await sleep(50);
+  dev = null;
+  $('btnScan').disabled = true;
+  const list = $('scanList'); list.innerHTML = '';
+  setPill('Scanning…', 'busy');
+  let found = 0;
+  for (let a = 0; a <= 15 && transport; a++){
+    note(`Scanning address ${a} of 15…`);
+    try {
+      const r = await exclusive(() => transact(frame(0x02, [0x80 | a], 0), { timeout:700 }));
+      if (r && r.chkOk && r.data[0] === 0xFE){
+        found++;
+        const d = r.data, rev = d[4];
+        const mfrId = rev >= 7 && d.length >= 19 ? (d[17] << 8) | d[18] : d[1];
+        const li = document.createElement('li');
+        const b = document.createElement('button');
+        b.textContent = `Address ${a}: ${MFR[mfrId] || hx(mfrId)}, ID ${hex(d.slice(9,12))}`;
+        b.onclick = () => { $('addr').value = a; connectDevice(a); };
+        li.appendChild(b); list.appendChild(li);
+      }
+    } catch(e){ log(e.message, 'er'); }
+  }
+  setPill(`Connected via ${transport?.label || ''}`, 'on');
+  note(found ? `Found ${found} device${found > 1 ? 's' : ''}. Tap one to open it.` : 'No devices answered on addresses 0–15.', !found);
+  $('btnScan').disabled = !transport;
+}
+
+async function disconnect(){
+  live = false;
+  while (liveRunning) await sleep(50);
+  if (transport && dev && loopFixed != null){
+    try { await cmd(40, fbytes(0)); log('Exited loop test before disconnecting'); } catch(e){ log(`Could not exit loop test: ${e.message}`, 'er'); }
+    setLoopFixed(null);
+  }
+  if (transport){ await transport.close(); transport = null; }
+  dev = null;
+  setPill('Disconnected');
+  document.body.classList.remove('has-device');
+  $('barDevice').textContent = 'No device';
+  $('btnConnect').disabled = false; $('btnScan').disabled = true; $('btnDisc').disabled = true;
+  ['liveCard','statusCard','devCard','rangeCard','cfgCard','dvCard'].forEach(id => $(id).classList.add('hidden'));
+  $('scanList').innerHTML = '';
+  note('Disconnected.');
+  log('Disconnected');
+}
+
+function lostConnection(){
+  if (!transport) return;
+  transport.running = false;
+  log('Modem unplugged or connection lost', 'er');
+  disconnect().then(() => note('The modem was unplugged or the connection dropped. Reconnect to continue.', true));
+}
+
+/* ================= V2: writing ================= */
+let lastDet = null, loopFixed = null, cfgBusy = false;
+const changes = [];
+
+const fbytes = v => { const b = new ArrayBuffer(4); new DataView(b).setFloat32(0, v, false); return [...new Uint8Array(b)]; };
+const packedOk = s => /^[\x20-\x5F]*$/.test(s.toUpperCase());
+function packAscii(str, nBytes){
+  const n = nBytes * 4 / 3, s = str.toUpperCase().padEnd(n, ' ').slice(0, n), out = [];
+  for (let i = 0; i < n; i += 4){
+    let v = 0;
+    for (let j = 0; j < 4; j++) v = (v << 6) | (s.charCodeAt(i + j) & 0x3F);
+    out.push((v >> 16) & 255, (v >> 8) & 255, v & 255);
+  }
+  return out;
+}
+const latin1Bytes = (s, n) => Array.from(s.padEnd(n, ' ').slice(0, n), c => c.charCodeAt(0));
+const num = id => { const v = $(id).value.trim(); return v === '' ? NaN : Number(v); };
+const tidy = v => isFinite(v) ? Number(v.toPrecision(7)) : '';
+
+const UNIT_GROUPS = [
+  ['Pressure', [7,8,12,11,237,6,1,4,238,239,145,3,2,5,9,10,13,14]],
+  ['Level and length', [45,49,48,44,47]],
+  ['Other', [57,32,33,35,39,58,36]]
+];
+(function buildUnitSelect(){
+  const sel = $('fUnits');
+  UNIT_GROUPS.forEach(([g, codes]) => {
+    const og = document.createElement('optgroup'); og.label = g;
+    codes.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = UNITS[c]; og.appendChild(o); });
+    sel.appendChild(og);
+  });
+  for (let a = 0; a <= 63; a++){ const o = document.createElement('option'); o.value = a; o.textContent = a; $('fPoll').appendChild(o); }
+})();
+
+function fillForms(det){
+  $('cfgCard').classList.remove('hidden');
+  $('fTag').value = det.tag || '';
+  $('fDesc').value = det.desc || '';
+  $('fMsg').value = det.msg || '';
+  $('fLongTag').value = det.longTag || '';
+  if (det.date){ const [d, m, y] = det.date.split('/'); $('fDate').value = `${y}-${m}-${d}`; }
+  $('wLongTag').disabled = dev.rev < 6;
+  const r = det.range;
+  if (r){
+    const sel = $('fUnits');
+    if (![...sel.options].some(o => +o.value === r.units)){
+      const o = document.createElement('option'); o.value = r.units; o.textContent = unitName(r.units); sel.appendChild(o);
+    }
+    sel.value = r.units;
+    $('fLrv').value = tidy(r.lrv); $('fUrv').value = tidy(r.urv); $('fDamp').value = tidy(r.damping);
+    $('wpWarn').classList.toggle('hidden', r.wp !== 1);
+  }
+  $('fPoll').value = dev.poll;
+}
+
+function cfgMsg(text, cls){ const n = $('cfgNote'); n.textContent = text; n.className = 'cfgnote ' + (cls || ''); }
+
+function confirmDialog(title, lines, output){
+  return new Promise(res => {
+    const dlg = $('dlg');
+    $('dlgTitle').textContent = title;
+    $('dlgList').innerHTML = '';
+    lines.forEach(l => { const li = document.createElement('li'); li.textContent = l; $('dlgList').appendChild(li); });
+    $('dlgSafe').classList.toggle('hidden', !output);
+    $('dlgSafeChk').checked = false;
+    $('dlgOk').disabled = !!output;
+    $('dlgSafeChk').onchange = () => { $('dlgOk').disabled = !$('dlgSafeChk').checked; };
+    const finish = v => { dlg.onclose = null; if (dlg.open) dlg.close(); res(v); };
+    $('dlgOk').onclick = () => finish(true);
+    $('dlgCancel').onclick = () => finish(false);
+    dlg.onclose = () => res(false);
+    dlg.showModal();
+  });
+}
+
+function setCfgBusy(on){
+  cfgBusy = on;
+  $('cfgCard').style.opacity = on ? '.55' : '';
+  $('cfgCard').style.pointerEvents = on ? 'none' : '';
+}
+
+function addChange(label, detail, result, cls){
+  changes.push({ t: new Date(), label, detail, result, cls });
+  $('histCard').classList.remove('hidden');
+  const li = document.createElement('li'); li.className = cls === 'bad' ? 'bad' : '';
+  li.textContent = label;
+  const s = document.createElement('small');
+  s.textContent = `${changes[changes.length-1].t.toLocaleTimeString()}. ${detail} ${result}`;
+  li.appendChild(s);
+  $('hist').prepend(li);
+}
+
+// Core write wrapper
+async function runWrite({ label, lines, output=false, n, data=[], detail='', refresh=true, confirm=true }){
+  if (!dev || cfgBusy) return null;
+  if (confirm && !(await confirmDialog(label, lines, output))) return null;
+  setCfgBusy(true);
+  const wasLive = live; live = false;
+  while (liveRunning) await sleep(50);
+  cfgMsg(`${label}: writing…`, '');
+  let r = null;
+  try {
+    r = await cmd(n, data);
+    const res = r.warning ? `Done with warning: ${r.warning}.` : 'Done.';
+    log(`WRITE ${label}: ${res}`);
+    addChange(label, detail, res, r.warning ? 'warn' : 'ok');
+    cfgMsg(`${label}: ${r.warning ? 'written with a warning: ' + r.warning : 'written'}${refresh ? '. Re-reading the device…' : '.'}`, r.warning ? 'warn' : 'ok');
+    if (refresh){
+      try { renderDevice(dev, await loadDetails()); cfgMsg(`${label}: written and re-read from the device. Check the values above.`, r.warning ? 'warn' : 'ok'); }
+      catch(e){ log(e.message, 'er'); }
+    }
+  } catch(e){
+    log(`WRITE ${label} failed: ${e.message}`, 'er');
+    addChange(label, detail, `Failed: ${e.message.replace(/^Command \d+: /,'')}.`, 'bad');
+    cfgMsg(`${label} failed: ${e.message.replace(/^Command \d+: /,'')}.`, 'bad');
+  }
+  setCfgBusy(false);
+  if (wasLive){ live = true; liveLoop(); }
+  return r;
+}
+
+/* ----- Loop test ----- */
+function setLoopFixed(v){
+  loopFixed = v;
+  $('fixedBanner').classList.toggle('hidden', v == null);
+  if (v != null) $('fixedText').textContent = `Loop test: output fixed at ${fmt(v)} mA`;
+}
+async function setLoop(mA){
+  if (!isFinite(mA) || mA < 3.5 || mA > 23) { cfgMsg('Enter a current between 3.5 and 23 mA.', 'bad'); return null; }
+  const entering = loopFixed == null;
+  const r = await runWrite({
+    label: `Loop test ${fmt(mA)} mA`, n: 40, data: fbytes(mA), refresh: false, output: true, confirm: entering,
+    lines: ['The 4–20 mA output will stop following the process and hold this value until you exit loop test.', `Output: ${fmt(mA)} mA`],
+    detail: `Output fixed at ${fmt(mA)} mA.`
+  });
+  if (r){ const actual = f32(r.data, 0); setLoopFixed(isFinite(actual) ? actual : mA); }
+  return r;
+}
+async function exitLoop(){
+  const r = await runWrite({ label:'Exit loop test', n:40, data:fbytes(0), refresh:false, confirm:false, detail:'Output returned to normal.' });
+  if (r){ setLoopFixed(null); resetTrim(); }
+  return r;
+}
+
+/* ----- Trim wizard ----- */
+function trimStage(stage){
+  // stage: 0 start, 1 at 4 mA, 2 trimmed 4, 3 at 20 mA, 4 trimmed 20
+  $('trLow').disabled = $('tr2').disabled = stage !== 1;
+  $('tr3').disabled = stage !== 2;
+  $('trHigh').disabled = $('tr4').disabled = stage !== 3;
+  $('tr5').disabled = stage < 1;
+}
+function resetTrim(){ trimStage(0); $('trLow').value = ''; $('trHigh').value = ''; }
+async function trimAt(target, inputId, n, nextStage){
+  const m = num(inputId);
+  if (!isFinite(m)) return cfgMsg('Enter the reading from your reference meter.', 'bad');
+  const lines = [`Reference meter reading: ${m.toFixed(3)} mA`, `Target: ${target.toFixed(3)} mA`];
+  if (Math.abs(m - target) > 0.5) lines.push('This reading is more than 0.5 mA from the target. Check the meter and wiring before trimming.');
+  const r = await runWrite({ label:`Trim ${target} mA`, lines, n, data:fbytes(m), refresh:false, detail:`Reference read ${m.toFixed(3)} mA at ${target} mA.` });
+  if (r) trimStage(nextStage);
+}
+
+/* ----- Sensor trim (Commands 50, 80, 81, 82, 83) ----- */
+let st = null;
+const TRIM_SUPPORT = {0:'Not supported',1:'Single point',2:'Upper point only',3:'Lower and upper points'};
+async function checkSensorTrim(){
+  if (!dev || cfgBusy) return;
+  setCfgBusy(true);
+  cfgMsg('Checking sensor trim support…', '');
+  st = null; $('stBody').classList.add('hidden');
+  dvList = null; dvMap = null; $('dvBody').classList.add('hidden'); $('dvList').innerHTML = ''; $('dvLoad').textContent = 'Load';
+  $('dvHint').textContent = 'Reads every device variable with its type, live value, status and limits (HART Commands 9, 50 and 54).';
+  try {
+    let pvDv = 0;
+    try { const r50 = await cmd(50); pvDv = r50.data[0]; } catch(e){ log(`Command 50 not available, assuming device variable 0: ${e.message}`); }
+    const g = (await cmd(81, [pvDv])).data;
+    if (g.length < 23) throw new Error('Unexpected Command 81 reply');
+    st = { dv: pvDv, support: g[1], units: g[2],
+           minL: f32(g,3), maxL: f32(g,7), minU: f32(g,11), maxU: f32(g,15), minDiff: f32(g,19), lastL: NaN, lastU: NaN };
+    try { const p = (await cmd(80, [pvDv])).data; if (p.length >= 10){ st.lastL = f32(p,2); st.lastU = f32(p,6); } } catch(e){ log(e.message, 'er'); }
+    if (!st.support){ cfgMsg('The device reports that this variable cannot be sensor-trimmed.', 'bad'); st = null; }
+    else { renderSensorTrim(); cfgMsg('Sensor trim is supported. Follow the steps below.', 'ok'); }
+  } catch(e){
+    st = null;
+    const msg = /not implemented/i.test(e.message)
+      ? 'This device does not support the standard sensor trim commands. Use the manufacturer\'s tool (for VEGA, PACTware with the VEGA DTM) or Zero PV for a zero offset.'
+      : `Sensor trim check failed: ${e.message.replace(/^Command \d+: /,'')}.`;
+    cfgMsg(msg, 'bad');
+  }
+  setCfgBusy(false);
+}
+function renderSensorTrim(){
+  const u = unitName(st.units);
+  document.querySelectorAll('.stU').forEach(e => e.textContent = u);
+  const single = st.support === 1, hasLow = st.support === 1 || st.support === 3, hasHigh = st.support === 2 || st.support === 3;
+  $('stLowLi').classList.toggle('hidden', !hasLow);
+  $('stHighLi').classList.toggle('hidden', !hasHigh);
+  $('stLowLbl').textContent = single ? 'Trim point' : 'Lower trim point';
+  $('stLowBtn').textContent = single ? 'Trim' : 'Trim lower point';
+  const rows = [['Device variable', st.dv], ['Trim points', TRIM_SUPPORT[st.support] ?? `Code ${st.support}`]];
+  if (hasLow) rows.push([single ? 'Allowed range' : 'Lower point allowed', `${fmt(st.minL)} to ${fmt(st.maxL)} ${u}`], ['Last ' + (single ? 'trim point' : 'lower point'), isFinite(st.lastL) ? `${fmt(st.lastL)} ${u}` : '—']);
+  if (hasHigh) rows.push(['Upper point allowed', `${fmt(st.minU)} to ${fmt(st.maxU)} ${u}`], ['Last upper point', isFinite(st.lastU) ? `${fmt(st.lastU)} ${u}` : '—']);
+  if (st.support === 3 && isFinite(st.minDiff)) rows.push(['Minimum difference between points', `${fmt(st.minDiff)} ${u}`]);
+  fillTable($('stInfo'), rows);
+  if (hasLow && isFinite(st.lastL) && $('stLow').value === '') $('stLow').value = tidy(st.lastL);
+  if (hasHigh && isFinite(st.lastU) && $('stHigh').value === '') $('stHigh').value = tidy(st.lastU);
+  $('stBody').classList.remove('hidden');
+}
+async function sensorTrim(point){
+  if (!st) return;
+  const low = point === 1, u = unitName(st.units);
+  const v = num(low ? 'stLow' : 'stHigh');
+  if (!isFinite(v)) return cfgMsg('Enter the reference value from your calibrator.', 'bad');
+  const [mn, mx] = low ? [st.minL, st.maxL] : [st.minU, st.maxU];
+  if (isFinite(mn) && isFinite(mx) && (v < mn || v > mx)) return cfgMsg(`That value is outside the device's allowed range (${fmt(mn)} to ${fmt(mx)} ${u}).`, 'bad');
+  const name = st.support === 1 ? 'Sensor trim' : `Sensor trim ${low ? 'lower' : 'upper'} point`;
+  const r = await runWrite({ label:name, n:82, data:[st.dv, point, st.units, ...fbytes(v)], output:true, refresh:false,
+    lines:[`Reference value: ${fmt(v)} ${u}`, `Live reading before trim: ${$('stLive').textContent}`,
+           'The device will correct its sensor reading to match the reference. The output will shift to suit.'],
+    detail:`Reference ${fmt(v)} ${u}, reading before trim ${$('stLive').textContent}.` });
+  if (r){
+    try { const p = (await cmd(80, [st.dv])).data; if (p.length >= 10){ st.lastL = f32(p,2); st.lastU = f32(p,6); } } catch(e){}
+    renderSensorTrim();
+    cfgMsg(`${name}: done. Check the live reading now matches your calibrator.`, 'ok');
+  }
+}
+async function resetSensorTrim(){
+  if (!st) return;
+  const r = await runWrite({ label:'Restore factory sensor trim', n:83, data:[st.dv], output:true, refresh:false,
+    lines:['All sensor trim adjustments made in the field are removed and the factory calibration is restored.'],
+    detail:'Sensor trim reset to factory.' });
+  if (r){ $('stLow').value = ''; $('stHigh').value = ''; await checkSensorTrim(); }
+}
+
+/* ----- Button handlers ----- */
+function bindWrites(){
+  $('wTag').onclick = () => {
+    const tag = $('fTag').value.toUpperCase(), desc = $('fDesc').value.toUpperCase(), date = $('fDate').value;
+    if (!packedOk(tag) || !packedOk(desc)) return cfgMsg('Tag and descriptor can only use uppercase letters, numbers, spaces and basic symbols.', 'bad');
+    if (!date) return cfgMsg('Pick a date.', 'bad');
+    const [y, m, d] = date.split('-').map(Number);
+    if (y < 1900 || y > 2155) return cfgMsg('The date must be between 1900 and 2155.', 'bad');
+    runWrite({ label:'Write tag, descriptor and date', n:18,
+      data:[...packAscii(tag,6), ...packAscii(desc,12), d, m, y - 1900],
+      lines:[`Tag: ${lastDet?.tag ?? ''} → ${tag}`, `Descriptor: ${lastDet?.desc ?? ''} → ${desc}`, `Date: ${lastDet?.date ?? ''} → ${String(d).padStart(2,'0')}/${String(m).padStart(2,'0')}/${y}`],
+      detail:`Tag ${lastDet?.tag ?? ''} → ${tag}. Descriptor ${lastDet?.desc ?? ''} → ${desc}.` });
+  };
+  $('wLongTag').onclick = () => {
+    const s = $('fLongTag').value;
+    if ([...s].some(c => c.charCodeAt(0) > 255)) return cfgMsg('The long tag contains characters HART cannot store.', 'bad');
+    runWrite({ label:'Write long tag', n:22, data:latin1Bytes(s, 32), lines:[`${lastDet?.longTag ?? ''} → ${s}`], detail:`Long tag ${lastDet?.longTag ?? ''} → ${s}.` });
+  };
+  $('wMsg').onclick = () => {
+    const s = $('fMsg').value.toUpperCase();
+    if (!packedOk(s)) return cfgMsg('The message can only use uppercase letters, numbers, spaces and basic symbols.', 'bad');
+    runWrite({ label:'Write message', n:17, data:packAscii(s, 24), lines:[`${lastDet?.msg ?? ''} → ${s}`], detail:`Message → ${s}.` });
+  };
+  $('wRange').onclick = () => {
+    const u = +$('fUnits').value, lrv = num('fLrv'), urv = num('fUrv');
+    if (!isFinite(lrv) || !isFinite(urv)) return cfgMsg('Enter both range values.', 'bad');
+    if (lrv === urv) return cfgMsg('The upper and lower range values cannot be the same.', 'bad');
+    const r = lastDet?.range, ou = r ? unitName(r.units) : '';
+    const lines = [
+      `LRV (4 mA): ${r ? fmt(r.lrv) + ' ' + ou : '?'} → ${fmt(lrv)} ${unitName(u)}`,
+      `URV (20 mA): ${r ? fmt(r.urv) + ' ' + ou : '?'} → ${fmt(urv)} ${unitName(u)}`
+    ];
+    if (urv < lrv) lines.push('URV is below LRV, so the output will be reverse-acting.');
+    runWrite({ label:'Write range', n:35, data:[u, ...fbytes(urv), ...fbytes(lrv)], output:true, lines,
+      detail:`Range ${r ? fmt(r.lrv) + '–' + fmt(r.urv) + ' ' + ou : '?'} → ${fmt(lrv)}–${fmt(urv)} ${unitName(u)}.` });
+  };
+  $('wUnits').onclick = () => {
+    const u = +$('fUnits').value, r = lastDet?.range;
+    runWrite({ label:'Change PV units', n:44, data:[u], lines:[`${r ? unitName(r.units) : '?'} → ${unitName(u)}`, 'The range is converted to the new units. The output does not change.'],
+      detail:`PV units ${r ? unitName(r.units) : '?'} → ${unitName(u)}.` });
+  };
+  $('wDamp').onclick = () => {
+    const v = num('fDamp');
+    if (!isFinite(v) || v < 0) return cfgMsg('Enter a damping value of 0 seconds or more.', 'bad');
+    const r = lastDet?.range;
+    runWrite({ label:'Write damping', n:34, data:fbytes(v), lines:[`${r ? fmt(r.damping) : '?'} s → ${fmt(v)} s`], detail:`Damping ${r ? fmt(r.damping) : '?'} s → ${fmt(v)} s.` });
+  };
+  document.querySelectorAll('[data-ma]').forEach(b => b.onclick = () => setLoop(Number(b.dataset.ma)));
+  $('wLoopCustom').onclick = () => setLoop(num('fLoopMa'));
+  $('wLoopExit').onclick = () => { if (loopFixed == null) return cfgMsg('Loop test is not active.', ''); exitLoop(); };
+  $('btnBannerExit').onclick = exitLoop;
+
+  $('tr1').onclick = async () => { if (await setLoop(4)) trimStage(1); };
+  $('tr2').onclick = () => trimAt(4, 'trLow', 45, 2);
+  $('tr3').onclick = async () => { if (await setLoop(20)) trimStage(3); };
+  $('tr4').onclick = () => trimAt(20, 'trHigh', 46, 4);
+  $('tr5').onclick = exitLoop;
+
+  $('dvLoad').onclick = loadDeviceVariables;
+  $('dmWrite').onclick = writeDvMapping;
+  $('stCheck').onclick = checkSensorTrim;
+  $('stLowBtn').onclick = () => sensorTrim(1);
+  $('stHighBtn').onclick = () => sensorTrim(2);
+  $('stReset').onclick = resetSensorTrim;
+  $('wZero').onclick = () => runWrite({ label:'Zero PV', n:43, output:true,
+    lines:['The pressure applied right now becomes zero (position correction).', 'Make sure the transmitter is vented or at the true zero reference.'], detail:'PV zeroed at applied pressure.' });
+  $('wSetLrv').onclick = () => runWrite({ label:'Set LRV to applied', n:37, output:true,
+    lines:['The pressure applied right now becomes the 4 mA point.', 'The span is kept the same, so the URV moves too.'], detail:'LRV set to applied pressure.' });
+  $('wSetUrv').onclick = () => runWrite({ label:'Set URV to applied', n:36, output:true,
+    lines:['The pressure applied right now becomes the 20 mA point.', 'The LRV stays where it is.'], detail:'URV set to applied pressure.' });
+
+  $('wPoll').onclick = async () => {
+    const a = +$('fPoll').value, on = $('fLoopMode').checked;
+    const lines = [`Poll address: ${dev.poll} → ${a}`];
+    if (!on) lines.push('The 4–20 mA output will be parked at 4 mA (multidrop).');
+    const r = await runWrite({ label:'Write poll address', n:6, data: dev.rev >= 6 ? [a, on ? 1 : 0] : [a], output: !on, lines,
+      detail:`Poll address ${dev.poll} → ${a}${on ? '' : ', output parked'}.` });
+    if (r){ dev.poll = a; $('addr').value = Math.min(a, 15); }
+  };
+  $('wClearCfg').onclick = async () => {
+    let data = [];
+    if (dev.rev >= 7){
+      try { const r0 = await cmd(0); data = [r0.data[14], r0.data[15]]; }
+      catch(e){ return cfgMsg(`Could not read the change counter: ${e.message}`, 'bad'); }
+    }
+    runWrite({ label:'Clear configuration changed flag', n:38, data, confirm:false, detail:'Flag acknowledged.' });
+  };
+  $('wReset').onclick = async () => {
+    const poll = dev.poll;
+    const r = await runWrite({ label:'Restart device', n:42, output:true, refresh:false,
+      lines:['The transmitter will reboot. Its output may go to the alarm level during start-up.'], detail:'Device restarted.' });
+    if (r){
+      setLoopFixed(null); resetTrim();
+      cfgMsg('Device is restarting. Reconnecting in a few seconds…', 'warn');
+      await sleep(6000);
+      await connectDevice(poll);
+    }
+  };
+  $('btnHistShare').onclick = async () => {
+    const head = `HART changes: ${lastDet?.longTag || lastDet?.tag || ''} (device ID ${dev?.devId ?? '—'})`;
+    const text = [head, ...changes.map(c => `${c.t.toLocaleString()}  ${c.label}. ${c.detail} ${c.result}`)].join('\n');
+    try { if (navigator.share) return await navigator.share({ title:'HART changes', text }); } catch(e){ if (e.name === 'AbortError') return; }
+    try { await navigator.clipboard.writeText(text); $('btnHistShare').textContent = 'Copied'; }
+    catch(e){ $('btnHistShare').textContent = 'Blocked'; }
+    setTimeout(() => $('btnHistShare').textContent = 'Share', 2500);
+  };
+  window.addEventListener('beforeunload', e => { if (loopFixed != null){ e.preventDefault(); e.returnValue = ''; } });
+}
+bindWrites();
+
+/* ================= Device variables (Commands 9, 50, 51, 54) ================= */
+const DV_CLASS = {0:'Not classified',64:'Temperature',65:'Pressure',66:'Volumetric flow',67:'Velocity',68:'Volume',69:'Length',
+  70:'Time',71:'Mass',72:'Mass flow',73:'Density',74:'Viscosity',75:'Angular velocity',76:'Area',77:'Energy',78:'Force',
+  79:'Power',80:'Frequency',81:'Analytical'};
+const DV_QUALITY = ['bad','uncertain','fixed','good'];
+const DV_QUALITY_TEXT = {bad:'Bad',uncertain:'Uncertain',fixed:'Fixed or manual',good:'Good'};
+const DV_LIMIT = ['','Low limited','High limited','Constant'];
+const SLOT = ['PV','SV','TV','QV'];
+let dvList = null, dvMap = null, dvBatch = 0;
+
+async function loadDeviceVariables(){
+  if (!dev || cfgBusy) return;
+  setCfgBusy(true); $('dvLoad').disabled = true;
+  const wasLive = live; live = false;
+  while (liveRunning) await sleep(50);
+  const n = Math.min(dev.nVars ?? 8, 240);
+  const list = [];
+  try {
+    try { dvMap = Array.from((await cmd(50)).data.slice(0,4)); } catch(e){ dvMap = null; log(e.message, 'er'); }
+    for (let c = 0; c < n; c++){
+      $('dvHint').textContent = `Reading device variable ${c + 1} of ${n}…`;
+      try {
+        const d = (await cmd(54, [c], { quiet:true })).data;
+        if (d.length < 22) continue;
+        list.push({ code:c, serial:(d[1]<<16)|(d[2]<<8)|d[3], limUnits:d[4], usl:f32(d,5), lsl:f32(d,9),
+          damping:f32(d,13), minSpan:f32(d,17), cls:d[21], family:d[22] ?? null });
+      } catch(e){
+        if (/not implemented/i.test(e.message)){ throw new Error('This device does not support Command 54 (device variable information).'); }
+        log(`DV ${c}: ${e.message}`);   // usually "Invalid selection" for unused codes
+      }
+    }
+    dvList = list;
+    renderDvList();
+    await readDvValues(true);
+    $('dvHint').textContent = `${list.length} device variable${list.length === 1 ? '' : 's'}. Names come from the manufacturer's DD, so variables are shown by number and type.`;
+    $('dvLoad').textContent = 'Reload';
+  } catch(e){
+    $('dvHint').textContent = e.message.replace(/^Command \d+: /,'');
+  }
+  $('dvLoad').disabled = false; setCfgBusy(false);
+  if (wasLive){ live = true; liveLoop(); }
+}
+
+function dvLabel(v){ return `DV ${v.code}: ${DV_CLASS[v.cls] ?? 'Class ' + v.cls}`; }
+
+function renderDvList(){
+  const ul = $('dvList'); ul.innerHTML = '';
+  dvList.forEach(v => {
+    const li = document.createElement('li'); li.id = `dv-${v.code}`;
+    const mapped = dvMap ? dvMap.map((c, i) => c === v.code ? SLOT[i] : null).filter(Boolean) : [];
+    li.innerHTML = `<div class="dvtop"><span class="dvname"></span><span class="dvval">—</span></div><div class="dvstat">Not read yet</div>
+      <details><summary>Limits and details</summary><table></table></details>`;
+    const nm = li.querySelector('.dvname'); nm.textContent = dvLabel(v);
+    mapped.forEach(m => { const b = document.createElement('span'); b.className = 'dvmap'; b.textContent = m; nm.appendChild(b); });
+    const u = unitName(v.limUnits);
+    fillTable(li.querySelector('table'), [
+      ['Upper sensor limit', `${fmt(v.usl)} ${u}`], ['Lower sensor limit', `${fmt(v.lsl)} ${u}`],
+      ['Minimum span', `${fmt(v.minSpan)} ${u}`], ['Damping', `${fmt(v.damping)} s`],
+      ['Sensor serial number', v.serial || '—']
+    ]);
+    ul.appendChild(li);
+  });
+  // Mapping selects
+  ['dmPV','dmSV','dmTV','dmQV'].forEach((id, i) => {
+    const sel = $(id); sel.innerHTML = '';
+    const add = (val, text) => { const o = document.createElement('option'); o.value = val; o.textContent = text; sel.appendChild(o); };
+    if (i > 0) add(250, 'Not used');
+    dvList.forEach(v => add(v.code, dvLabel(v)));
+    if (dvMap){
+      if (![...sel.options].some(o => +o.value === dvMap[i])) add(dvMap[i], `Code ${dvMap[i]}`);
+      sel.value = dvMap[i];
+    }
+  });
+  $('dmWrite').disabled = !dvMap;
+  $('dvBody').classList.remove('hidden');
+}
+
+function applyDvValues(data, count){
+  for (let k = 0; k < count; k++){
+    const o = 1 + k * 8;
+    if (o + 8 > data.length) break;
+    const code = data[o], units = data[o+2], val = f32(data, o+3), st = data[o+7];
+    const li = $(`dv-${code}`); if (!li) continue;
+    const q = DV_QUALITY[(st >> 6) & 3], lim = DV_LIMIT[(st >> 4) & 3];
+    li.className = q;
+    li.querySelector('.dvval').textContent = isFinite(val) ? `${fmt(val)} ${unitName(units)}` : 'Not available';
+    li.querySelector('.dvstat').textContent = [DV_QUALITY_TEXT[q], lim, st & 0x08 ? 'More status available' : ''].filter(Boolean).join(', ');
+  }
+}
+
+// Reads one batch (or all, if all=true). HART 7 allows 8 variables per Command 9, HART 6 allows 4.
+async function readDvValues(all, quiet=true){
+  if (!dvList || !dvList.length) return;
+  const per = dev.rev >= 7 ? 8 : 4, batches = Math.ceil(dvList.length / per);
+  const run = async b => {
+    const codes = dvList.slice(b * per, b * per + per).map(v => v.code);
+    try { applyDvValues((await cmd(9, codes, { quiet })).data, codes.length); }
+    catch(e){ log(`Command 9: ${e.message}`, 'er'); }
+  };
+  if (all){ for (let b = 0; b < batches; b++) await run(b); }
+  else { dvBatch = (dvBatch + 1) % batches; await run(dvBatch); }
+}
+
+async function writeDvMapping(){
+  const next = ['dmPV','dmSV','dmTV','dmQV'].map(id => +$(id).value);
+  if (!dvMap) return;
+  const name = c => { const v = dvList.find(x => x.code === c); return c === 250 ? 'Not used' : v ? dvLabel(v) : `Code ${c}`; };
+  const lines = SLOT.map((s, i) => `${s}: ${name(dvMap[i])}${next[i] !== dvMap[i] ? ' → ' + name(next[i]) : ' (unchanged)'}`);
+  const pvChanged = next[0] !== dvMap[0];
+  const r = await runWrite({ label:'Write variable mapping', n:51, data:next, output:pvChanged, lines,
+    detail: SLOT.map((s, i) => `${s} ${name(dvMap[i])}${next[i] !== dvMap[i] ? ' → ' + name(next[i]) : ''}`).join(', ') + '.' });
+  if (r){
+    try { dvMap = Array.from((await cmd(50)).data.slice(0,4)); } catch(e){}
+    renderDvList(); await readDvValues(true);
+  }
+}
+
+/* ================= Wiring ================= */
+for (let a = 0; a <= 15; a++){ const o = document.createElement('option'); o.value = a; o.textContent = a; $('addr').appendChild(o); }
+$('btnConnect').onclick = connect;
+$('btnDisc').onclick = disconnect;
+$('btnScan').onclick = scan;
+$('btnLive').onclick = () => {
+  live = !live;
+  $('btnLive').textContent = live ? 'Pause' : 'Resume';
+  if (live) liveLoop(); else $('liveAge').textContent = 'Paused';
+};
+$('btnRefresh').onclick = async () => {
+  if (!dev) return;
+  const wasLive = live; live = false;
+  while (liveRunning) await sleep(50);
+  $('btnRefresh').disabled = true;
+  try { renderDevice(dev, await loadDetails()); } catch(e){ log(e.message, 'er'); }
+  $('btnRefresh').disabled = false;
+  if (wasLive){ live = true; liveLoop(); }
+};
+$('btnClear').onclick = () => { logEl.innerHTML = ''; logLines.length = 0; };
+$('btnCopy').onclick = async () => {
+  const text = logLines.join('\n'), btn = $('btnCopy');
+  const done = m => { btn.textContent = m; setTimeout(() => btn.textContent = 'Copy log', 2500); };
+  try { await navigator.clipboard.writeText(text); return done('Copied'); } catch(e){}
+  const ta = $('logText'); ta.value = text; ta.classList.remove('hidden');
+  ta.focus(); ta.select(); ta.setSelectionRange(0, text.length);
+  let ok = false; try { ok = document.execCommand('copy'); } catch(e){}
+  if (ok) return done('Copied');
+  $('copyHelp').classList.remove('hidden'); done('Copy blocked');
+};
+$('btnShare').onclick = async () => {
+  try { await navigator.share({ title:'HART log', text:logLines.join('\n') }); }
+  catch(e){ if (e.name !== 'AbortError'){ $('btnShare').textContent = 'Share blocked'; setTimeout(() => $('btnShare').textContent = 'Share log', 2500); } }
+};
+if (!navigator.share) $('btnShare').classList.add('hidden');
+if ('usb' in navigator) navigator.usb.addEventListener('disconnect', () => { if (transport instanceof UsbCp210xTransport) lostConnection(); });
+if ('serial' in navigator) navigator.serial.addEventListener('disconnect', () => { if (transport instanceof SerialTransport) lostConnection(); });
+
+log(`Started: ${navigator.userAgent}`);
+log(`serial=${'serial' in navigator} usb=${'usb' in navigator} android=${isAndroid}`);
+})();
+
+
+/* ================= App shell: navigation, install, theme, offline ================= */
+(() => {
+'use strict';
+const APP_VERSION = '3.0.0';
+const $ = id => document.getElementById(id);
+
+// Navigation
+function show(view){
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.dataset.view === view));
+  document.querySelectorAll('.tab').forEach(t => {
+    const on = t.dataset.view === view;
+    t.classList.toggle('active', on);
+    if (on) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current');
+  });
+  window.scrollTo({ top: 0 });
+}
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => show(t.dataset.view)));
+document.querySelectorAll('[data-goto]').forEach(b => b.addEventListener('click', () => show(b.dataset.goto)));
+
+// About
+$('appVersion').textContent = APP_VERSION;
+const access = [('serial' in navigator) && 'Web Serial', ('usb' in navigator) && 'WebUSB'].filter(Boolean);
+$('appAccess').textContent = access.length ? access.join(' and ') : 'Not available in this browser';
+const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+$('appInstalled').textContent = standalone() ? 'Yes' : 'No';
+
+// Theme
+const store = { get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }, set(k,v){ try { localStorage.setItem(k,v); } catch(e){} } };
+function applyTheme(t){
+  if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  else delete document.documentElement.dataset.theme;
+}
+const savedTheme = store.get('hart-theme') || 'auto';
+$('themeSel').value = savedTheme; applyTheme(savedTheme);
+$('themeSel').addEventListener('change', e => { store.set('hart-theme', e.target.value); applyTheme(e.target.value); });
+
+// Install (Chrome and Edge show this when the app meets PWA criteria)
+let deferredPrompt = null;
+const installBtns = [$('btnInstall'), $('btnInstall2')];
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault(); deferredPrompt = e;
+  installBtns.forEach(b => b.classList.remove('hidden'));
+});
+installBtns.forEach(b => b.addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  await deferredPrompt.userChoice.catch(() => {});
+  deferredPrompt = null;
+  installBtns.forEach(x => x.classList.add('hidden'));
+}));
+window.addEventListener('appinstalled', () => {
+  installBtns.forEach(x => x.classList.add('hidden'));
+  $('appInstalled').textContent = 'Yes';
+});
+
+// Offline support and updates
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')){
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!refreshing){ refreshing = true; location.reload(); } });
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    const offer = w => {
+      $('updateToast').classList.remove('hidden');
+      $('btnUpdate').onclick = () => w.postMessage('SKIP_WAITING');
+    };
+    if (reg.waiting && navigator.serviceWorker.controller) offer(reg.waiting);
+    reg.addEventListener('updatefound', () => {
+      const w = reg.installing;
+      w && w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) offer(w); });
+    });
+    setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000);
+  }).catch(err => console.warn('Service worker registration failed', err));
+}
+})();

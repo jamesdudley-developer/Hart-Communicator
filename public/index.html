@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>HART Communicator</title>
+<meta name="description" content="Read, monitor and configure HART field devices from Chrome or Edge using a USB HART modem.">
+<meta name="theme-color" content="#17242D">
+<meta name="color-scheme" content="light dark">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="appbar">
+  <div class="brand">
+    <img src="icons/favicon.svg" alt="" width="28" height="28">
+    <div class="brand-text">
+      <span class="brand-name">HART Communicator</span>
+      <span class="brand-device" id="barDevice">No device</span>
+    </div>
+  </div>
+  <div class="appbar-actions">
+    <button class="iconbtn hidden" id="btnInstall" title="Install app" aria-label="Install app">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-4.5-4.5M12 15l4.5-4.5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+    </button>
+    <span class="pill" id="pill">Disconnected</span>
+  </div>
+</header>
+
+<div class="banner hidden" id="fixedBanner" role="status"><span id="fixedText">Loop current fixed</span><button id="btnBannerExit">Exit loop test</button></div>
+<div class="toast hidden" id="updateToast" role="status"><span>A new version is ready.</span><button id="btnUpdate">Update</button></div>
+
+<nav class="tabs" aria-label="Sections">
+  <button class="tab active" data-view="live" aria-current="page">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg><span>Live</span></button>
+  <button class="tab" data-view="device">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h6M9 15h3"/></svg><span>Device</span></button>
+  <button class="tab" data-view="variables">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg><span>Variables</span></button>
+  <button class="tab" data-view="configure">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><span>Configure</span></button>
+  <button class="tab" data-view="log">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4z"/><path d="m8 10 2 2-2 2M12 14h4"/></svg><span>Log</span></button>
+</nav>
+
+<main>
+
+<!-- ================= LIVE ================= -->
+<section class="view active" data-view="live">
+
+  <section class="panel conn" id="connCard">
+    <div class="conn-row">
+      <label>Connection
+        <select id="method">
+          <option value="auto">Automatic</option>
+          <option value="usb">WebUSB (Android)</option>
+          <option value="serial">Web Serial (Windows)</option>
+        </select>
+      </label>
+      <label>Poll address
+        <select id="addr"></select>
+      </label>
+    </div>
+    <div class="btns">
+      <button class="primary" id="btnConnect">Connect</button>
+      <button id="btnScan" disabled>Scan 0–15</button>
+      <button id="btnDisc" disabled>Disconnect</button>
+    </div>
+    <ul class="scanlist" id="scanList"></ul>
+    <p class="note" id="connNote">Clip onto the loop, plug in the modem, then connect.</p>
+  </section>
+
+  <section class="hero hidden" id="liveCard">
+    <div class="hero-head">
+      <span class="hero-tag" id="liveTag">Primary variable</span>
+      <span class="hero-age" id="liveAge"></span>
+    </div>
+    <div class="pv" id="pvBox"><span class="num" id="pvVal">—</span><span class="unit" id="pvUnit"></span></div>
+
+    <div class="gauge">
+      <div class="gauge-read"><span id="mA">— mA</span><span id="pct">— %</span></div>
+      <div class="gauge-track" aria-hidden="true">
+        <div class="zone fault lo"></div><div class="zone sat lo"></div>
+        <div class="zone sat hi"></div><div class="zone fault hi"></div>
+        <div class="fill" id="pctFill"></div>
+        <div class="needle" id="mANeedle"></div>
+      </div>
+      <div class="gauge-ticks" aria-hidden="true">
+        <span style="left:5.263%">4</span><span style="left:26.316%">8</span><span style="left:47.368%">12</span>
+        <span style="left:68.421%">16</span><span style="left:89.474%">20 mA</span>
+      </div>
+    </div>
+
+    <table class="kv" id="dynTable"></table>
+    <div class="btns">
+      <button id="btnLive">Pause</button>
+      <button id="btnRefresh">Reload device data</button>
+    </div>
+  </section>
+
+  <section class="panel hidden" id="statusCard">
+    <h2>Device status</h2>
+    <ul class="flags" id="flags"></ul>
+  </section>
+</section>
+
+<!-- ================= DEVICE ================= -->
+<section class="view" data-view="device">
+  <div class="empty">
+    <p>Connect to a device to see its identity, range and output settings.</p>
+    <button data-goto="live">Go to connection</button>
+  </div>
+  <section class="panel hidden" id="devCard">
+    <p class="devname" id="devName"></p>
+    <p class="devsub" id="devSub"></p>
+    <table class="kv" id="devTable"></table>
+  </section>
+  <section class="panel hidden" id="rangeCard">
+    <h2>Range and output</h2>
+    <table class="kv" id="rangeTable"></table>
+  </section>
+</section>
+
+<!-- ================= VARIABLES ================= -->
+<section class="view" data-view="variables">
+  <div class="empty">
+    <p>Connect to a device to read its device variables and change the PV, SV, TV and QV mapping.</p>
+    <button data-goto="live">Go to connection</button>
+  </div>
+  <section class="panel hidden" id="dvCard">
+    <div class="panel-head">
+      <h2>Device variables</h2>
+      <button class="small" id="dvLoad">Load</button>
+    </div>
+    <p class="hint" id="dvHint">Reads every device variable with its type, live value, status and limits (HART Commands 9, 50 and 54).</p>
+    <div id="dvBody" class="hidden">
+      <h2 style="margin-top:12px">Variable mapping</h2>
+      <div class="row2" style="margin-bottom:8px">
+        <label>PV<select id="dmPV"></select></label>
+        <label>SV<select id="dmSV"></select></label>
+        <label>TV<select id="dmTV"></select></label>
+        <label>QV<select id="dmQV"></select></label>
+      </div>
+      <div class="btns"><button id="dmWrite">Write mapping</button></div>
+      <p class="hint" style="margin-top:6px">Changing the PV changes what the 4–20 mA output represents.</p>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0 8px">
+        <h2 style="margin:0">Values</h2>
+        <label style="display:flex;align-items:center;gap:8px;font-size:.88rem"><input type="checkbox" id="dvAuto" checked> Update live</label>
+      </div>
+      <ul class="dvlist" id="dvList"></ul>
+    </div>
+  </section>
+</section>
+
+<!-- ================= CONFIGURE ================= -->
+<section class="view" data-view="configure">
+  <div class="empty">
+    <p>Connect to a device to change its configuration, run loop tests and trims.</p>
+    <button data-goto="live">Go to connection</button>
+  </div>
+  <section class="panel cfg hidden" id="cfgCard">
+    <h2>Configure</h2>
+    <div class="wpwarn hidden" id="wpWarn">The device reports write protection is on. It will refuse changes until protection is turned off at the device.</div>
+
+    <details>
+      <summary>Tag, descriptor and date</summary>
+      <div class="body">
+        <label>Tag (8 characters)<input type="text" id="fTag" maxlength="8" autocapitalize="characters"></label>
+        <label>Descriptor (16 characters)<input type="text" id="fDesc" maxlength="16" autocapitalize="characters"></label>
+        <label>Date<input type="date" id="fDate"></label>
+        <p class="hint">Uppercase letters, numbers, spaces and basic symbols only (HART packed text).</p>
+        <div class="btns"><button class="primary" id="wTag">Write tag, descriptor and date</button></div>
+      </div>
+    </details>
+
+    <details>
+      <summary>Long tag and message</summary>
+      <div class="body">
+        <label>Long tag (32 characters)<input type="text" id="fLongTag" maxlength="32"></label>
+        <div class="btns"><button class="primary" id="wLongTag">Write long tag</button></div>
+        <label>Message (32 characters)<input type="text" id="fMsg" maxlength="32" autocapitalize="characters"></label>
+        <div class="btns"><button class="primary" id="wMsg">Write message</button></div>
+      </div>
+    </details>
+
+    <details>
+      <summary>Range and units</summary>
+      <div class="body">
+        <label>Units<select id="fUnits"></select></label>
+        <div class="row2" style="margin:0">
+          <label>Lower range value (4 mA)<input type="number" id="fLrv" step="any" inputmode="decimal"></label>
+          <label>Upper range value (20 mA)<input type="number" id="fUrv" step="any" inputmode="decimal"></label>
+        </div>
+        <div class="btns">
+          <button class="primary" id="wRange">Write range</button>
+          <button id="wUnits">Change PV units only</button>
+        </div>
+        <p class="hint">Range values are sent in the selected units. Changing PV units converts the display and range without changing the output.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>Damping</summary>
+      <div class="body">
+        <label>Damping (seconds)<input type="number" id="fDamp" step="any" min="0" inputmode="decimal"></label>
+        <div class="btns"><button class="primary" id="wDamp">Write damping</button></div>
+      </div>
+    </details>
+
+    <details>
+      <summary>Loop test</summary>
+      <div class="body">
+        <p class="hint">Fixes the 4–20 mA output so you can check the loop end to end. The output stops following the process until you exit.</p>
+        <div class="chips">
+          <button data-ma="4">4 mA</button><button data-ma="8">8 mA</button><button data-ma="12">12 mA</button>
+          <button data-ma="16">16 mA</button><button data-ma="20">20 mA</button>
+          <button data-ma="3.6">3.6 mA</button><button data-ma="21">21 mA</button>
+        </div>
+        <label>Custom output (mA)
+          <span class="inline-field"><input type="number" id="fLoopMa" step="0.001" min="3.5" max="23" inputmode="decimal" placeholder="e.g. 10.5"><button id="wLoopCustom">Set output</button></span>
+        </label>
+        <div class="btns"><button class="primary" id="wLoopExit">Exit loop test</button></div>
+      </div>
+    </details>
+
+    <details>
+      <summary>Loop current trim (D/A trim)</summary>
+      <div class="body">
+        <p class="hint">Needs a reference milliammeter in the loop. Corrects the transmitter's output so 4 and 20 mA are exact.</p>
+        <ol class="steplist">
+          <li><button id="tr1">1. Set output to 4 mA</button></li>
+          <li><label>2. Reference meter reading at 4 mA<input type="number" id="trLow" step="0.001" inputmode="decimal" disabled></label>
+              <button id="tr2" disabled>Trim 4 mA</button></li>
+          <li><button id="tr3" disabled>3. Set output to 20 mA</button></li>
+          <li><label>4. Reference meter reading at 20 mA<input type="number" id="trHigh" step="0.001" inputmode="decimal" disabled></label>
+              <button id="tr4" disabled>Trim 20 mA</button></li>
+          <li><button id="tr5" disabled>5. Finish and exit loop test</button></li>
+        </ol>
+      </div>
+    </details>
+
+    <details id="stDetails">
+      <summary>Sensor trim</summary>
+      <div class="body">
+        <p class="hint">Corrects the sensor reading against a reference pressure. Uses HART common-practice Commands 80–83, which not every device supports.</p>
+        <div class="btns"><button id="stCheck">Check sensor trim support</button></div>
+        <div id="stBody" class="hidden" style="display:grid;gap:10px">
+          <table id="stInfo"></table>
+          <div class="loopnums" style="margin:0"><span>Live sensor reading</span><span id="stLive">—</span></div>
+          <ol class="steplist">
+            <li id="stLowLi"><label><span id="stLowLbl">Lower trim point</span>: reference value (<span class="stU"></span>)<input type="number" id="stLow" step="any" inputmode="decimal"></label>
+              <button id="stLowBtn">Trim lower point</button></li>
+            <li id="stHighLi"><label>Upper trim point: reference value (<span class="stU"></span>)<input type="number" id="stHigh" step="any" inputmode="decimal"></label>
+              <button id="stHighBtn">Trim upper point</button></li>
+          </ol>
+          <p class="hint">Apply the reference pressure, wait for the live reading to settle, then enter the calibrator's value. Do the lower point first.</p>
+          <div class="btns"><button id="stReset">Restore factory sensor trim</button></div>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>Zero and push-button ranging</summary>
+      <div class="body">
+        <p class="hint">These use the pressure applied right now. Vent or apply the reference pressure first and let it settle.</p>
+        <div class="btns">
+          <button id="wZero">Zero PV (position correction)</button>
+          <button id="wSetLrv">Set LRV to applied</button>
+          <button id="wSetUrv">Set URV to applied</button>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>Advanced</summary>
+      <div class="body">
+        <div class="row2" style="margin:0">
+          <label>Poll address<select id="fPoll"></select></label>
+          <label style="align-content:end"><span style="display:flex;gap:8px;align-items:center;min-height:44px"><input type="checkbox" id="fLoopMode" checked> 4–20 mA output active</span></label>
+        </div>
+        <div class="btns"><button id="wPoll">Write poll address</button></div>
+        <p class="hint">Turning the 4–20 mA output off parks it at 4 mA for multidrop use.</p>
+        <div class="btns">
+          <button id="wClearCfg">Clear "configuration changed" flag</button>
+          <button id="wReset">Restart device</button>
+        </div>
+      </div>
+    </details>
+
+    <div class="cfgnote hidden" id="cfgNote"></div>
+  </section>
+  <section class="panel hidden" id="histCard">
+    <div class="panel-head">
+      <h2>Changes this session</h2>
+      <button class="small" id="btnHistShare">Share</button>
+    </div>
+    <ul class="hist" id="hist"></ul>
+  </section>
+</section>
+
+<!-- ================= LOG ================= -->
+<section class="view" data-view="log">
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Communication log</h2>
+      <div class="btns">
+        <button class="small" id="btnCopy">Copy</button>
+        <button class="small" id="btnShare">Share</button>
+        <button class="small" id="btnClear">Clear</button>
+      </div>
+    </div>
+    <label class="check"><input type="checkbox" id="logLive"> Log every live update</label>
+    <div class="log" id="log"></div>
+    <p class="note hidden" id="copyHelp">Automatic copy was blocked. The log is selected in the box below. Long-press it and tap Copy.</p>
+    <textarea id="logText" class="hidden" readonly rows="8" aria-label="Log text"></textarea>
+  </section>
+
+  <section class="panel">
+    <h2>App</h2>
+    <table class="kv">
+      <tr><td>Version</td><td id="appVersion"></td></tr>
+      <tr><td>Installed</td><td id="appInstalled">No</td></tr>
+      <tr><td>Hardware access</td><td id="appAccess"></td></tr>
+    </table>
+    <label style="margin-top:12px">Appearance
+      <select id="themeSel">
+        <option value="auto">Match system</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </label>
+    <div class="btns" style="margin-top:12px"><button class="hidden" id="btnInstall2">Install app</button></div>
+    <p class="note">This app talks to field devices using standard HART universal and common-practice commands. It is not a registered HART host and does not use device descriptions (DDs). For SIL-rated devices, verify configuration with the manufacturer's approved tools.</p>
+  </section>
+</section>
+
+</main>
+
+<dialog id="dlg">
+    <h3 id="dlgTitle"></h3>
+    <ul id="dlgList"></ul>
+    <label class="safe hidden" id="dlgSafe"><input type="checkbox" id="dlgSafeChk"> <span>The loop is in manual or bypassed, and it's safe for the 4–20 mA output to change.</span></label>
+    <div class="btns">
+      <button class="primary" id="dlgOk">Write to device</button>
+      <button id="dlgCancel">Cancel</button>
+    </div>
+  </dialog>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+// Only used if Cloudflare sets this repo up as a Worker instead of a Pages project.
+// For Cloudflare Pages, set "Build output directory" to: public
+{
+  "name": "hart-communicator",
+  "compatibility_date": "2026-09-01",
+  "assets": { "directory": "./public" }
+}
