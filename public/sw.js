@@ -1,8 +1,9 @@
 /* HART Communicator service worker: offline app shell with user-confirmed updates.
    Bump VERSION whenever any app file changes so installed copies pick up the update. */
-const VERSION = 'hart-3.0.0';
+const VERSION = 'hart-4.0.0';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './manifest.webmanifest',
+  './hart-core.js', './profiles.js', './sim.js', './capture.js',
   './icons/favicon.svg', './icons/icon-192.png', './icons/icon-512.png',
   './icons/maskable-512.png', './icons/apple-touch-icon.png'
 ];
