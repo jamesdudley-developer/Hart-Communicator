@@ -28,13 +28,24 @@ Cloudflare Pages, build output directory `public`. `wrangler.jsonc` is only used
 - Transports: `SerialTransport` (Web Serial) and `UsbCp210xTransport` (WebUSB, drives the CP210x directly). Both run **1200 baud, 8 data bits, odd parity, 1 stop bit**. Don't change these.
 - Framing: `frame()`, `parseFrame()`, `transact()`, `cmd()`. All bus traffic goes through `exclusive()` so only one transaction runs at a time; keep it that way.
 - Device: `identify()`, `loadDetails()`, `scan()` (poll addresses 0–15), `liveLoop()`.
-- Writes: `runWrite()` handles confirmation and the change history.
+- Writes: `runWrite()` handles confirmation and the change history. `raw: true` returns the reply even for error response codes (used by the console).
+- `SimTransport` drives the simulator in `sim.js`. `record()` keeps every byte sent and received for the Capture tab.
+- Profiles and tools: `renderProfile()`, sensor setup (`readSensor`, `buildSensorWrite`, `writeSensor`), console (`sendConsole`). `window.HARTApp` is the bridge used by `capture.js`.
+
+## Other files in `public/`
+
+- `hart-core.js` (`window.HART`): frame codec, byte scanner, universal/common-practice command dictionary, serial-log importers, capture analysis, reports, passive listen mode.
+- `profiles.js` (`window.HARTProfiles`): device profiles from Rosemount FDS documents and the per-device-type layout templates (localStorage). Don't add byte layouts to profiles without the FDS or a capture.
+- `sim.js` (`window.HARTSim`): simulated HART 5 temperature and HART 7 pressure devices. Its 140/141 layout is simulator-only; simulator templates are never applied to real devices.
+- `capture.js`: the Capture tab, including learning sensor layouts from captures.
 
 ## Safety rules (field devices are live)
 
 - Every write to a device goes through `runWrite()` with a confirmation dialog. Never add a write path that skips it.
 - Anything that moves the loop output (loop test, D/A trim, fixed current) must set `output: true` so the safety warning shows, and must leave a clear way to exit (`exitLoop()`).
 - Don't remove the plain-English device status or the NAMUR NE 43 zones on the gauge.
+- The passive listen mode in `hart-core.js` must never transmit.
+- Sensor setup writes stay locked until a layout template exists for that device type, revision and transport (real or simulator).
 
 ## Before you finish
 

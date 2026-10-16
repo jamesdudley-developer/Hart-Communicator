@@ -161,6 +161,30 @@ class UsbCp210xTransport {
   }
 }
 
+// Built-in simulator (sim.js). Replies arrive after a short delay, like a real loop.
+class SimTransport {
+  async open(){
+    this.bus = new window.HARTSim.SimBus();
+    this.label = 'Simulator'; this.isSim = true; this.running = true;
+    log('SIMULATOR opened: temperature device at poll 0 (HART 5), pressure device at poll 1 (HART 7)');
+  }
+  async write(b){
+    const replies = this.bus.write(b);
+    setTimeout(() => { if (this.running) replies.forEach(r => rxBuf.push(...r)); }, 120 + Math.random() * 80);
+  }
+  async setRTS(){}
+  async close(){ this.running = false; }
+}
+
+/* ================= Session traffic (for the Capture tab) ================= */
+// Every byte the app sends and receives, in the same chunk shape the capture importers produce.
+const traffic = [];
+const ts = () => { const d = new Date(), p = (n, w=2) => String(n).padStart(w,'0'); return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(),3)}`; };
+function record(bytes, dir){
+  traffic.push({ bytes: Array.from(bytes), dir, time: ts() });
+  if (traffic.length > 6000) traffic.splice(0, 1000);
+}
+
 /* ================= HART link layer ================= */
 let chain = Promise.resolve();
 const exclusive = fn => { const p = chain.then(fn, fn); chain = p.catch(() => {}); return p; };
@@ -196,14 +220,16 @@ async function transact(fr, { quiet=false, timeout=900 } = {}){
   await transport.setRTS(true);
   if (!quiet) log(`TX ${hex(fr)}`, 'tx');
   await transport.write(fr);
+  record(fr, 'tx');
   await sleep(Math.ceil(fr.length * 11 / 1.2) + 15);   // 11 bits/byte at 1200 baud
   await transport.setRTS(false);
   const t0 = performance.now();
   while (performance.now() - t0 < timeout){
     const r = parseFrame(rxBuf);
-    if (r && !r.incomplete){ if (!quiet) log(`RX ${hex(rxBuf)}`, 'rx'); return r; }
+    if (r && !r.incomplete){ record(rxBuf, 'rx'); if (!quiet) log(`RX ${hex(rxBuf)}`, 'rx'); return r; }
     await sleep(20);
   }
+  if (rxBuf.length) record(rxBuf, 'rx');
   log(rxBuf.length ? `RX invalid ${hex(rxBuf)}` : 'RX no reply', 'er');
   return null;
 }
@@ -222,6 +248,7 @@ async function cmd(number, data=[], opts={}){
       if (s0 & 0x80){ last = `Communication error ${hx(s0)}`; continue; }
       if (s0 === 32){ last = 'Device busy'; await sleep(300); continue; }
       if ((s0 === 33 || s0 === 34) && dr++ < 60){ last = 'Delayed response still running'; attempt--; await sleep(500); continue; }
+      if (opts.raw){ handleDeviceStatus(r.status[1]); r.rcText = s0 ? respText(number, s0) : 'OK'; return r; }
       if (s0 !== 0 && s0 !== 8 && s0 !== 14) throw new Error(`Command ${number}: ${respText(number, s0)}`);
       handleDeviceStatus(r.status[1]);
       if (s0) r.warning = respText(number, s0);
@@ -332,6 +359,7 @@ function renderDevice(info, det){
   cmd48Data = det.cmd48 || null;
   renderStatus();
   lastDet = det;
+  renderProfile(info);
   fillForms(det);
   $('dvCard').classList.remove('hidden');
 }
@@ -419,9 +447,10 @@ function pickMethod(){
 
 async function connect(){
   const m = pickMethod();
+  if (m === 'sim' && !window.HARTSim) return note('The simulator did not load. Reload the page.', true);
   if (m === 'usb' && !('usb' in navigator)) return note('WebUSB is not available in this browser. Use Chrome or Edge.', true);
   if (m === 'serial' && !('serial' in navigator)) return note('Web Serial is not available in this browser. Try WebUSB.', true);
-  const t = m === 'usb' ? new UsbCp210xTransport() : new SerialTransport();
+  const t = m === 'sim' ? new SimTransport() : m === 'usb' ? new UsbCp210xTransport() : new SerialTransport();
   try {
     await t.open();
     transport = t;
@@ -435,11 +464,14 @@ async function connect(){
   }
 }
 
+let scanning = false, scanStop = false;
 async function connectDevice(poll){
+  if (scanning){ scanStop = true; while (scanning) await sleep(50); }
   live = false;
   while (liveRunning) await sleep(50);
   $('scanList').innerHTML = '';
   dev = null; lastDeviceStatus = null; cmd48Data = null; st = null; $('stBody').classList.add('hidden');
+  prof = null; snRead = null; ['profCard','snCard','conCard'].forEach(id => $(id).classList.add('hidden')); $('snBytes').classList.add('hidden'); $('conResult').classList.add('hidden');
   dvList = null; dvMap = null; $('dvBody').classList.add('hidden'); $('dvList').innerHTML = ''; $('dvLoad').textContent = 'Load';
   $('dvHint').textContent = 'Reads every device variable with its type, live value, status and limits (HART Commands 9, 50 and 54).';
   setPill('Reading device…', 'busy');
@@ -470,7 +502,8 @@ async function scan(){
   const list = $('scanList'); list.innerHTML = '';
   setPill('Scanning…', 'busy');
   let found = 0;
-  for (let a = 0; a <= 15 && transport; a++){
+  scanning = true; scanStop = false;
+  for (let a = 0; a <= 15 && transport && !scanStop; a++){
     note(`Scanning address ${a} of 15…`);
     try {
       const r = await exclusive(() => transact(frame(0x02, [0x80 | a], 0), { timeout:700 }));
@@ -486,6 +519,8 @@ async function scan(){
       }
     } catch(e){ log(e.message, 'er'); }
   }
+  scanning = false;
+  if (scanStop){ $('btnScan').disabled = !transport; return; }
   setPill(`Connected via ${transport?.label || ''}`, 'on');
   note(found ? `Found ${found} device${found > 1 ? 's' : ''}. Tap one to open it.` : 'No devices answered on addresses 0–15.', !found);
   $('btnScan').disabled = !transport;
@@ -504,7 +539,8 @@ async function disconnect(){
   document.body.classList.remove('has-device');
   $('barDevice').textContent = 'No device';
   $('btnConnect').disabled = false; $('btnScan').disabled = true; $('btnDisc').disabled = true;
-  ['liveCard','statusCard','devCard','rangeCard','cfgCard','dvCard'].forEach(id => $(id).classList.add('hidden'));
+  ['liveCard','statusCard','devCard','rangeCard','cfgCard','dvCard','profCard','snCard','conCard'].forEach(id => $(id).classList.add('hidden'));
+  prof = null; snRead = null;
   $('scanList').innerHTML = '';
   note('Disconnected.');
   log('Disconnected');
@@ -610,7 +646,7 @@ function addChange(label, detail, result, cls){
 }
 
 // Core write wrapper
-async function runWrite({ label, lines, output=false, n, data=[], detail='', refresh=true, confirm=true }){
+async function runWrite({ label, lines, output=false, n, data=[], detail='', refresh=true, confirm=true, raw=false }){
   if (!dev || cfgBusy) return null;
   if (confirm && !(await confirmDialog(label, lines, output))) return null;
   setCfgBusy(true);
@@ -619,7 +655,12 @@ async function runWrite({ label, lines, output=false, n, data=[], detail='', ref
   cfgMsg(`${label}: writing…`, '');
   let r = null;
   try {
-    r = await cmd(n, data);
+    r = await cmd(n, data, { raw });
+    if (raw){
+      const s0 = r.status[0];
+      if (s0 !== 0 && s0 !== 8 && s0 !== 14) throw Object.assign(new Error(r.rcText), { reply: r });
+      if (s0) r.warning = r.rcText;
+    }
     const res = r.warning ? `Done with warning: ${r.warning}.` : 'Done.';
     log(`WRITE ${label}: ${res}`);
     addChange(label, detail, res, r.warning ? 'warn' : 'ok');
@@ -632,6 +673,7 @@ async function runWrite({ label, lines, output=false, n, data=[], detail='', ref
     log(`WRITE ${label} failed: ${e.message}`, 'er');
     addChange(label, detail, `Failed: ${e.message.replace(/^Command \d+: /,'')}.`, 'bad');
     cfgMsg(`${label} failed: ${e.message.replace(/^Command \d+: /,'')}.`, 'bad');
+    if (raw && e.reply) r = e.reply;
   }
   setCfgBusy(false);
   if (wasLive){ live = true; liveLoop(); }
@@ -978,6 +1020,290 @@ async function writeDvMapping(){
   }
 }
 
+/* ================= Device profiles (profiles.js) ================= */
+const P = window.HARTProfiles, H = window.HART;
+let prof = null;         // { profile, revision, documented } for the connected device
+let snRead = null;       // last sensor configuration reply data
+
+const isSim = () => !!transport?.isSim;
+const parseHex = s => {
+  const t = String(s || '').replace(/0x/gi, '').replace(/[^0-9a-f]/gi, '');
+  if (t.length % 2) return null;
+  return t.match(/../g)?.map(h => parseInt(h, 16)) ?? [];
+};
+
+function renderProfile(info){
+  prof = P.match({ manufacturerId: info.mfrId, deviceType: info.devType, deviceRevision: info.devRev });
+  const card = $('profCard');
+  if (!prof){
+    card.classList.remove('hidden');
+    $('profTitle').textContent = 'No device profile';
+    $('profBody').textContent = 'This device is handled with HART universal and common-practice commands only. Device-specific functions need a profile built from the manufacturer\'s Field Device Specification or a capture.';
+    $('profFlags').innerHTML = '';
+  } else {
+    const p = prof.profile, rev = prof.revision;
+    card.classList.remove('hidden');
+    $('profTitle').textContent = p.model;
+    $('profBody').textContent = p.fds;
+    const flags = [];
+    if (p.suspect) flags.push(['The specification for this model is not genuine. Device-specific data is unverified.', 'bad']);
+    else if (!rev) flags.push([`Device revision ${info.devRev} is not covered by the specification on hand.`, 'warn']);
+    else if (!rev.documented) flags.push([rev.note || `Device revision ${info.devRev} is not documented.`, 'warn']);
+    else flags.push([`Device revision ${info.devRev} (HART ${rev.hart}) matches the specification.`, 'ok']);
+    if (p.sensor) flags.push([`Sensor setup: read Command ${p.sensor.read}, write Command ${p.sensor.write}. See Tools.`, '']);
+    if (isSim()) flags.push(['Simulated device. Its device-specific layout is for practice only.', 'warn']);
+    $('profFlags').innerHTML = flags.map(([t, c]) => `<li class="${c}">${esc(t)}</li>`).join('');
+  }
+  renderSensor();
+  renderConsole();
+}
+
+/* ================= Temperature sensor setup ================= */
+function snMsg(text, cls){ const n = $('snNote'); n.textContent = text; n.className = 'cfgnote ' + (cls || ''); n.classList.toggle('hidden', !text); }
+const snTemplate = () => prof?.profile.sensor ? P.templates.get(prof.profile.id, dev.devRev, isSim()) : null;
+
+function renderSensor(){
+  const card = $('snCard');
+  if (!dev){ card.classList.add('hidden'); return; }
+  card.classList.remove('hidden');
+  const p = prof?.profile;
+  const has = !!p?.sensor;
+  $('snNone').classList.toggle('hidden', has);
+  $('snBody').classList.toggle('hidden', !has);
+  if (!has){
+    const names = P.PROFILES.filter(x => x.sensor).map(x => x.model).join(', ');
+    $('snNone').textContent = `This device has no sensor setup profile. Profiles exist for: ${names}.`;
+    return;
+  }
+  $('snModel').textContent = `${p.model}, device revision ${dev.devRev}`;
+  // Sensor type options
+  const sel = $('snType'), cur = sel.value;
+  sel.innerHTML = '';
+  [['rtd', 'RTD and ohms'], ['tc', 'Thermocouple and millivolts']].forEach(([k, label]) => {
+    const og = document.createElement('optgroup'); og.label = label;
+    p.sensor.types.filter(t => t[2] === k).forEach(([code, name]) => { const o = document.createElement('option'); o.value = code; o.textContent = `${name} (code ${code})`; og.appendChild(o); });
+    sel.appendChild(og);
+  });
+  if (cur !== '') sel.value = cur;
+  const w = $('snWire'); if (!w.options.length) P.CONNECTIONS.forEach(([c, n]) => { const o = document.createElement('option'); o.value = c; o.textContent = n; w.appendChild(o); });
+  syncWire();
+
+  const t = snTemplate();
+  const rows = [['Read command', p.sensor.read], ['Write command', p.sensor.write]];
+  if (t){
+    rows.push(['Byte layout', t.source === 'capture' ? `Learned from a capture, ${new Date(t.savedAt).toLocaleDateString()}` : `Entered by hand, ${new Date(t.savedAt).toLocaleDateString()}`]);
+    rows.push(['Sensor type / wiring byte (write)', `${t.typeIdx} / ${t.connIdx ?? '—'}`]);
+    if (t.readTypeIdx != null) rows.push(['Sensor type / wiring byte (read)', `${t.readTypeIdx} / ${t.readConnIdx ?? '—'}`]);
+  } else rows.push(['Byte layout', 'Not set yet']);
+  fillTable($('snInfo'), rows);
+  $('snNoTpl').classList.toggle('hidden', !!t);
+  $('snTplClear').classList.toggle('hidden', !t);
+  $('snWrite').disabled = !t || !snRead;
+  $('snPreview').disabled = !t || !snRead;
+  renderSnRead();
+}
+
+function syncWire(){
+  const p = prof?.profile; if (!p?.sensor) return;
+  const t = p.sensor.types.find(x => x[0] === +$('snType').value);
+  $('snWire').disabled = t?.[2] === 'tc';
+  $('snWireHint').classList.toggle('hidden', t?.[2] !== 'tc');
+}
+
+function renderSnRead(){
+  const box = $('snRead');
+  if (!snRead){ box.innerHTML = '<p class="hint">Not read yet.</p>'; return; }
+  const t = snTemplate(), p = prof.profile;
+  let html = `<div class="bytes">${snRead.map((b, i) => `<span title="Byte ${i}">${b.toString(16).toUpperCase().padStart(2, '0')}<small>${i}</small></span>`).join('')}</div>`;
+  if (t && t.readTypeIdx != null && snRead.length > t.readTypeIdx){
+    const ty = snRead[t.readTypeIdx], cn = t.readConnIdx != null ? snRead[t.readConnIdx] : null;
+    html += `<table class="kv"><tr><td>Sensor type</td><td>${esc(P.sensorName(p, ty))}</td></tr>${cn != null ? `<tr><td>Wiring</td><td>${esc(P.connName(cn))}</td></tr>` : ''}</table>`;
+  } else {
+    const c = P.candidates(p, snRead);
+    html += `<p class="hint">The byte layout isn't set, so the reply is shown raw. Bytes that could be a sensor type: ${c.type.map(i => `${i} (${esc(P.sensorName(p, snRead[i]))})`).join(', ') || 'none'}. Learn the layout from a capture in the Capture tab.</p>`;
+  }
+  box.innerHTML = html;
+}
+
+async function pauseLive(fn){
+  const wasLive = live; live = false;
+  while (liveRunning) await sleep(50);
+  try { return await fn(); }
+  finally { if (wasLive && dev){ live = true; liveLoop(); } }
+}
+
+async function readSensor(){
+  const p = prof?.profile; if (!p?.sensor || !dev) return;
+  const t = snTemplate();
+  $('snReadBtn').disabled = true; snMsg('Reading sensor setup…');
+  try {
+    const r = await pauseLive(() => cmd(p.sensor.read, t?.readReq || [], { raw:true }));
+    if (r.status[0] && r.status[0] !== 8){
+      snRead = null;
+      snMsg(`The device answered Command ${p.sensor.read} with "${r.rcText}". ${r.status[0] === 5 ? 'It expects request data, so the layout has to come from a capture or the FDS.' : ''}`, 'bad');
+    } else {
+      snRead = Array.from(r.data);
+      snMsg(`Read ${snRead.length} bytes with Command ${p.sensor.read}.`, 'ok');
+    }
+  } catch(e){ snRead = null; snMsg(e.message, 'bad'); }
+  $('snReadBtn').disabled = false;
+  renderSensor();
+}
+
+function buildSensorWrite(){
+  const t = snTemplate(), p = prof.profile;
+  const type = +$('snType').value, kind = p.sensor.types.find(x => x[0] === type)?.[2];
+  const base = t.mirror ? [...snRead] : [...t.writeBase];
+  if (t.typeIdx >= base.length) throw new Error('The stored layout does not fit the current reply. Learn it again.');
+  base[t.typeIdx] = type;
+  if (t.connIdx != null && kind === 'rtd') base[t.connIdx] = +$('snWire').value;
+  return base;
+}
+
+function previewSensor(){
+  try {
+    const data = buildSensorWrite(), n = prof.profile.sensor.write;
+    $('snBytes').textContent = `Command ${n}, data: ${hex(data)}\nFrame: ${hex(frame(0x82, dev.longAddr, n, data))}`;
+    $('snBytes').classList.remove('hidden');
+    snMsg('Dry run: nothing was sent. Compare these bytes with the capture of AMS making the same change.', '');
+  } catch(e){ snMsg(e.message, 'bad'); }
+}
+
+async function writeSensor(){
+  const p = prof.profile, t = snTemplate();
+  let data; try { data = buildSensorWrite(); } catch(e){ return snMsg(e.message, 'bad'); }
+  const type = +$('snType').value, kind = p.sensor.types.find(x => x[0] === type)?.[2];
+  const before = t.readTypeIdx != null && snRead ? P.sensorName(p, snRead[t.readTypeIdx]) : 'unknown';
+  const lines = [
+    `Sensor type: ${before} → ${P.sensorName(p, type)}`,
+    kind === 'rtd' && t.connIdx != null ? `Wiring: ${P.connName(+$('snWire').value)}` : 'Wiring: unchanged',
+    `Command ${p.sensor.write} data: ${hex(data)}`,
+    'Changing the sensor type can reset the sensor trim, units and range. Check them afterwards.',
+  ];
+  if (t.source !== 'capture') lines.push('This layout was entered by hand, not learned from a capture. Check the bytes against the FDS.');
+  const r = await runWrite({ label:'Write sensor setup', n:p.sensor.write, data, output:true, lines,
+    detail:`Sensor ${before} → ${P.sensorName(p, type)}.` });
+  if (r){
+    await readSensor();
+    snMsg(r.warning
+      ? `Sensor setup written. The device returned a warning (response code ${r.status[0]}), which the FDS uses to flag that trim, units or range were reset. Read back above. Check range, units and trim on the Device tab.`
+      : 'Sensor setup written and read back above. Check range, units and trim on the Device tab.', r.warning ? 'warn' : 'ok');
+  }
+}
+
+function saveManualTemplate(){
+  const p = prof?.profile; if (!p?.sensor) return;
+  const readReq = parseHex($('mtRead').value), writeBase = parseHex($('mtWrite').value);
+  const typeIdx = parseInt($('mtType').value, 10), connIdx = $('mtConn').value === '' ? null : parseInt($('mtConn').value, 10);
+  const rType = $('mtRType').value === '' ? null : parseInt($('mtRType').value, 10), rConn = $('mtRConn').value === '' ? null : parseInt($('mtRConn').value, 10);
+  const mirror = $('mtMirror').checked;
+  if (readReq == null || writeBase == null) return snMsg('Request bytes must be hex pairs, for example "00" or "01 04".', 'bad');
+  if (!mirror && !writeBase.length) return snMsg('Enter the write data, or tick "write uses the read reply layout".', 'bad');
+  if (!Number.isInteger(typeIdx)) return snMsg('Enter the byte number of the sensor type in the write data.', 'bad');
+  P.templates.set({ profileId:p.id, devRev:dev.devRev, sim:isSim(), readReq, writeBase, typeIdx, connIdx, readTypeIdx:rType, readConnIdx:rConn,
+    mirror, source:'manual', savedAt:Date.now() });
+  snMsg('Layout saved for this device type and revision.', 'ok');
+  renderSensor();
+}
+
+/* ================= Command console ================= */
+// Commands that move the 4–20 mA output or restart the device, so they get the safety check.
+const OUTPUT_CMDS = new Set([35, 36, 37, 40, 41, 42, 43, 45, 46, 47, 51, 79, 82, 83]);
+const conHistory = [];
+
+function renderConsole(){
+  $('conCard').classList.toggle('hidden', !dev);
+  const dl = $('conList');
+  if (!dl.options.length || dl.dataset.prof !== (prof?.profile.id || '')){
+    const all = { ...Object.fromEntries(Object.entries(H.COMMANDS).map(([n, c]) => [n, c.name])) };
+    Object.entries(prof?.profile.commands || {}).forEach(([n, c]) => { all[n] = c.name; });
+    dl.innerHTML = Object.entries(all).map(([n, name]) => `<option value="${n}">${esc(name)}</option>`).join('');
+    dl.dataset.prof = prof?.profile.id || '';
+  }
+  conInfo();
+}
+
+function conInfo(){
+  const n = parseInt($('conCmd').value, 10);
+  if (!Number.isInteger(n)){ $('conWhat').textContent = 'Enter a command number from 0 to 255.'; return; }
+  const d = H.describeCommand(n, prof?.profile);
+  const rw = { r:'Read', w:'Write', x:'Action' }[d.rw] || 'Unknown effect, treated as a write';
+  const layer = { universal:'Universal', common:'Common practice', device:'Device-specific', expansion:'Expansion', expanded:'Expanded', reserved:'Reserved' }[d.layer] || d.layer;
+  $('conWhat').textContent = [d.name === layer ? null : d.name, layer, rw].filter(Boolean).join('. ') + '.';
+}
+
+async function sendConsole(){
+  if (!dev) return;
+  const n = parseInt($('conCmd').value, 10), data = parseHex($('conData').value);
+  if (!Number.isInteger(n) || n < 0 || n > 255 || n === 31) return conOut('Enter a command number from 0 to 255 (31 is the expansion command and isn\'t sent directly).', 'bad');
+  if (data == null) return conOut('Data must be hex byte pairs, for example "01 04" or "0104".', 'bad');
+  const d = H.describeCommand(n, prof?.profile);
+  let r;
+  $('conSend').disabled = true;
+  try {
+    if (d.rw === 'r'){
+      r = await pauseLive(() => cmd(n, data, { raw:true }));
+    } else {
+      r = await runWrite({ label:`Console: Command ${n}`, n, data, raw:true, refresh:false,
+        output: OUTPUT_CMDS.has(n) || d.layer === 'device' || d.rw === '?',
+        lines:[`${d.name} (Command ${n})`, `Data: ${data.length ? hex(data) : 'none'}`,
+          d.rw === '?' ? 'The app doesn\'t know what this command does. Only send it if the device manual or FDS says it is safe.' : 'The device will act on this command.'],
+        detail:`Command ${n} data ${data.length ? hex(data) : 'none'}.` });
+      if (!r){ $('conSend').disabled = false; return conOut('Cancelled. Nothing was sent.', ''); }
+    }
+  } catch(e){ $('conSend').disabled = false; return conOut(e.message, 'bad'); }
+  $('conSend').disabled = false;
+  showConsoleReply(n, data, r, d);
+}
+
+function conOut(text, cls){ const n = $('conNote'); n.textContent = text; n.className = 'cfgnote ' + (cls || ''); n.classList.toggle('hidden', !text); }
+
+function showConsoleReply(n, data, r, d){
+  const s0 = r.status[0], ok = s0 === 0 || s0 === 8 || s0 === 14;
+  const flags = H.statusText(r.status[1]);
+  const dec = ok ? H.safeDecode(d.def?.rsp, Uint8Array.from(r.data)) : null;
+  const lens = d.layer === 'device' && r.data.length >= 4 ? H.floatLens(Uint8Array.from(r.data)).slice(0, 6) : [];
+  const fmtv = v => typeof v === 'number' && !Number.isInteger(v) ? +v.toPrecision(7) : (typeof v === 'object' ? JSON.stringify(v) : v);
+  conOut('', '');
+  const res = $('conResult');
+  res.innerHTML = `<p class="conhead ${ok ? 'ok' : 'bad'}">Command ${n}: ${esc(r.rcText || 'OK')}</p>
+    <table class="kv">
+      <tr><td>Sent</td><td class="mono">${data.length ? hex(data) : 'no data'}</td></tr>
+      <tr><td>Reply data</td><td class="mono">${r.data.length ? hex(r.data) : 'none'}</td></tr>
+      <tr><td>Device status</td><td>${esc(flags.join(', ') || 'No flags')}</td></tr>
+      ${dec ? Object.entries(dec).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(fmtv(v))}</td></tr>`).join('') : ''}
+    </table>
+    ${lens.length ? `<p class="hint">Possible floats in the reply: ${lens.map(x => `byte ${x.offset} = ${+x.value.toPrecision(6)}`).join(', ')}</p>` : ''}`;
+  res.classList.remove('hidden');
+  conHistory.unshift(`${new Date().toLocaleTimeString()}  ${n}  [${data.length ? hex(data) : '—'}]  →  ${r.rcText || 'OK'}  [${r.data.length ? hex(r.data) : '—'}]`);
+  conHistory.length = Math.min(conHistory.length, 25);
+  $('conHist').textContent = conHistory.join('\n');
+  $('conHistWrap').classList.remove('hidden');
+}
+
+function bindTools(){
+  $('snReadBtn').onclick = readSensor;
+  $('snPreview').onclick = previewSensor;
+  $('snWrite').onclick = writeSensor;
+  $('snType').onchange = syncWire;
+  $('snTplClear').onclick = () => { if (!prof) return; P.templates.remove(prof.profile.id, dev.devRev, isSim()); snMsg('Layout removed.', ''); renderSensor(); };
+  $('mtSave').onclick = saveManualTemplate;
+  $('conSend').onclick = sendConsole;
+  $('conCmd').oninput = conInfo;
+  $('conCmd').onkeydown = $('conData').onkeydown = e => { if (e.key === 'Enter') sendConsole(); };
+}
+bindTools();
+
+// Bridge for capture.js
+window.HARTApp = {
+  traffic: () => traffic.slice(),
+  isSim,
+  device: () => dev,
+  profile: () => prof,
+  templatesChanged: () => renderSensor(),
+  log,
+};
+
 /* ================= Wiring ================= */
 for (let a = 0; a <= 15; a++){ const o = document.createElement('option'); o.value = a; o.textContent = a; $('addr').appendChild(o); }
 $('btnConnect').onclick = connect;
@@ -1024,7 +1350,7 @@ log(`serial=${'serial' in navigator} usb=${'usb' in navigator} android=${isAndro
 /* ================= App shell: navigation, install, theme, offline ================= */
 (() => {
 'use strict';
-const APP_VERSION = '3.0.0';
+const APP_VERSION = '4.0.0';
 const $ = id => document.getElementById(id);
 
 // Navigation
