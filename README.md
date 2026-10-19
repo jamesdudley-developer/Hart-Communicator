@@ -33,4 +33,4 @@ iPhone and iPad are not supported because Safari has no USB or serial access.
 
 ## How device-specific functions work
 
-HART device descriptions (DDs) can't run in a browser, so device-specific functions come from profiles in `public/profiles.js`, built from the manufacturer's Field Device Specification. Byte layouts for device-specific commands are never guessed. They are either learned from a capture of AMS making the change (Capture tab) or entered from the FDS by hand (Tools tab), and stored on the phone or PC for that device type and revision.
+HART device descriptions (DDs) can't run in a browser, so device-specific functions come from profiles in `public/profiles.js`, built from the manufacturer's Field Device Specification. Byte layouts for device-specific commands are never guessed. They are either learned from a capture of the configuration software making the change (Capture tab) or entered from the FDS by hand (Tools tab), and stored on the phone or PC for that device type and revision.

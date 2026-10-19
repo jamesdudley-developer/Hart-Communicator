@@ -88,6 +88,11 @@ function match({ manufacturerId, deviceType, deviceRevision }) {
   return { profile: p, revision: rev, documented: !!rev?.documented && !p.suspect };
 }
 
+// The manufacturer's own configuration software. Named only when the manufacturer ID from
+// Command 0 identifies the maker; otherwise the wording stays generic.
+const HOST_TOOLS = { 0x26: 'AMS Device Manager or AMS Device Configurator', 0x62: 'PACTware with the VEGA DTM', 0x11: 'FieldCare or DeviceCare' };
+const hostTool = manufacturerId => HOST_TOOLS[manufacturerId & 0xff] || "the manufacturer's configuration software";
+
 const sensorName = (p, code) => (p?.sensor?.types.find(t => t[0] === code) || [code, `Code ${code}`])[1];
 const connName = code => (CONNECTIONS.find(c => c[0] === code) || [code, `Code ${code}`])[1];
 
@@ -113,5 +118,5 @@ function candidates(profile, bytes) {
   return out;
 }
 
-window.HARTProfiles = { PROFILES, SENSOR_TYPES, CONNECTIONS, match, sensorName, connName, templates, candidates };
+window.HARTProfiles = { PROFILES, SENSOR_TYPES, CONNECTIONS, match, sensorName, connName, templates, candidates, hostTool };
 })();

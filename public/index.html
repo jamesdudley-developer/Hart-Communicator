@@ -265,7 +265,7 @@
     <details id="stDetails">
       <summary>Sensor trim</summary>
       <div class="body">
-        <p class="hint">Corrects the sensor reading against a reference pressure. Uses HART common-practice Commands 80–83, which not every device supports.</p>
+        <p class="hint"><span id="stIntro">Corrects the sensor reading against a reference value.</span> Uses HART common-practice Commands 80–83, which not every device supports.</p>
         <div class="btns"><button id="stCheck">Check sensor trim support</button></div>
         <div id="stBody" class="hidden" style="display:grid;gap:10px">
           <table id="stInfo"></table>
@@ -276,18 +276,18 @@
             <li id="stHighLi"><label>Upper trim point: reference value (<span class="stU"></span>)<input type="number" id="stHigh" step="any" inputmode="decimal"></label>
               <button id="stHighBtn">Trim upper point</button></li>
           </ol>
-          <p class="hint">Apply the reference pressure, wait for the live reading to settle, then enter the calibrator's value. Do the lower point first.</p>
+          <p class="hint" id="stApply">Apply the reference value, wait for the live reading to settle, then enter the calibrator's value. Do the lower point first.</p>
           <div class="btns"><button id="stReset">Restore factory sensor trim</button></div>
         </div>
       </div>
     </details>
 
     <details>
-      <summary>Zero and push-button ranging</summary>
+      <summary id="zrSummary">Zero and push-button ranging</summary>
       <div class="body">
-        <p class="hint">These use the pressure applied right now. Vent or apply the reference pressure first and let it settle.</p>
+        <p class="hint" id="zrHint">These use the value the device measures right now. Bring the input to the reference value first and let it settle.</p>
         <div class="btns">
-          <button id="wZero">Zero PV (position correction)</button>
+          <button id="wZero">Zero PV</button>
           <button id="wSetLrv">Set LRV to applied</button>
           <button id="wSetUrv">Set URV to applied</button>
         </div>
@@ -325,17 +325,17 @@
 <!-- ================= TOOLS ================= -->
 <section class="view" data-view="tools">
   <div class="empty">
-    <p>Connect to a device to use the sensor setup and the command console. Choose <b>Simulator</b> under Connection to practise without a modem.</p>
+    <p>Connect to a device to use the command console and, for supported devices, sensor setup. Choose <b>Simulator</b> under Connection to practise without a modem.</p>
     <button data-goto="live">Go to connection</button>
   </div>
 
   <section class="panel hidden" id="snCard">
-    <h2>Temperature sensor setup</h2>
+    <h2 id="snTitle">Sensor setup</h2>
     <p class="hint" id="snNone"></p>
     <div id="snBody" class="hidden tool">
       <p class="devsub" id="snModel" style="margin:0"></p>
       <table class="kv" id="snInfo"></table>
-      <p class="cfgnote warn" id="snNoTpl">The byte layout for this command isn't set yet, so writing is locked. Record AMS changing the sensor type and open the capture in the Capture tab, or enter the layout from the FDS under "Enter layout by hand".</p>
+      <p class="cfgnote warn" id="snNoTpl">The byte layout for this command isn't set yet, so writing is locked. Record the configuration software changing the sensor type and open the capture in the Capture tab, or enter the layout from the Field Device Specification under "Enter layout by hand".</p>
       <div class="btns"><button id="snReadBtn">Read sensor setup</button></div>
       <div id="snRead"></div>
       <div class="row2">
@@ -388,7 +388,7 @@
 <section class="view" data-view="capture">
   <section class="panel">
     <div class="panel-head"><h2>Listen on the loop</h2><span class="lsstate"><i id="lsDot" data-on="false"></i><span id="lsState">Not connected</span></span></div>
-    <p class="hint">Clip a second modem across the loop with its loop supply and resistor switched off. It only receives, so it records every request from AMS and every reply from the transmitter.</p>
+    <p class="hint">Clip a second modem across the loop with its loop supply and resistor switched off. It only receives, so it records every request from the configuration software or handheld and every reply from the device.</p>
     <fieldset class="slot"><legend>Record into</legend>
       <label class="check"><input type="radio" name="slot" value="a" checked> Capture</label>
       <label class="check"><input type="radio" name="slot" value="b"> Compare with</label>
@@ -415,10 +415,10 @@
       <button id="cpDemo">Open demo capture</button>
     </div>
     <details style="margin-top:6px">
-      <summary>How to record a capture of AMS</summary>
+      <summary>How to record a capture of configuration software</summary>
       <ol class="hint" style="padding-left:20px">
         <li>Start a serial port monitor on the modem's COM port, or listen with a second modem above.</li>
-        <li>Connect to the device in AMS Device Configurator.</li>
+        <li>Connect to the device in the configuration software (the manufacturer's tool, a DTM in an FDT frame, or another HART host).</li>
         <li>Change one setting, such as the sensor type, and send it.</li>
         <li>Stop the monitor and export the log as text or binary, then open it here.</li>
       </ol>
