@@ -68,6 +68,16 @@
       <label>Poll address
         <select id="addr"></select>
       </label>
+      <label class="span2" id="usbChipRow">USB chip
+        <select id="usbChip">
+          <option value="auto">Detect automatically</option>
+          <option value="cp210x">Silicon Labs CP210x (SMC-100C and similar)</option>
+          <option value="ftdi">FTDI</option>
+          <option value="pl2303">Prolific PL2303</option>
+          <option value="ch34x">WCH CH340 / CH341</option>
+          <option value="cdc">Standard USB serial (CDC)</option>
+        </select>
+      </label>
     </div>
     <div class="btns">
       <button class="primary" id="btnConnect">Connect</button>
@@ -483,6 +493,7 @@
     </div>
   </dialog>
 
+<script src="usb-serial.js"></script>
 <script src="hart-core.js"></script>
 <script src="profiles.js"></script>
 <script src="sim.js"></script>

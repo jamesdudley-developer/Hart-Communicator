@@ -122,42 +122,26 @@ class SerialTransport {
   }
 }
 
-class UsbCp210xTransport {
+// WebUSB: drives the modem's USB-to-serial chip directly (usb-serial.js). Covers CP210x
+// (Wishcolor SMC-100C), FTDI, PL2303, CH34x, CDC-ACM, and the P+F Viator USB (VID 0x10E5).
+class UsbSerialTransport {
   async open(){
-    this.dev = await navigator.usb.requestDevice({ filters:[{ vendorId:0x10C4 }] });
-    const d = this.dev;
-    await d.open();
-    if (!d.configuration) await d.selectConfiguration(1);
-    const iface = d.configuration.interfaces[0];
-    this.ifNum = iface.interfaceNumber;
-    await d.claimInterface(this.ifNum);
-    const eps = iface.alternate.endpoints;
-    this.epIn = eps.find(e => e.direction==='in' && e.type==='bulk').endpointNumber;
-    this.epOut = eps.find(e => e.direction==='out' && e.type==='bulk').endpointNumber;
-    await this.ctrl(0x00, 0x0001);                                            // IFC_ENABLE
-    const baud = new ArrayBuffer(4); new DataView(baud).setUint32(0, 1200, true);
-    await this.ctrl(0x1E, 0, baud);                                           // SET_BAUDRATE
-    await this.ctrl(0x03, 0x0810);                                            // 8 data, odd, 1 stop
-    await this.ctrl(0x12, 0x000F);                                            // PURGE
-    log(`USB opened ${d.productName||'CP210x'} PID=${hx(d.productId,4)} 1200 8O1`);
+    const d = await window.USBSerial.requestDevice();
+    const chip = $('usbChip').value || 'auto';
+    this.port = await window.USBSerial.openDevice(d, { chip, log: m => log(m) });
+    this.dev = d;
+    this.label = `WebUSB (${this.port.name})`;
     this.running = true; this.readLoop();
-    this.label = 'WebUSB';
-  }
-  ctrl(req, value, data){
-    const s = { requestType:'vendor', recipient:'interface', request:req, value, index:this.ifNum };
-    return data ? this.dev.controlTransferOut(s, data) : this.dev.controlTransferOut(s);
   }
   async readLoop(){
-    try { while (this.running){ const r = await this.dev.transferIn(this.epIn, 64); if (r.data && r.data.byteLength) rxBuf.push(...new Uint8Array(r.data.buffer)); } }
+    try { while (this.running){ const b = await this.port.read(); if (b.length) rxBuf.push(...b); } }
     catch(e){ if (this.running){ log(`USB read error: ${e.message}`, 'er'); lostConnection(); } }
   }
-  async write(b){ await this.dev.transferOut(this.epOut, b); }
-  async setRTS(on){ try { await this.ctrl(0x07, on ? 0x0202 : 0x0200); } catch(e){} }
+  async write(b){ await this.port.write(b); }
+  async setRTS(on){ try { await this.port.setRTS(on); } catch(e){} }
   async close(){
     this.running = false;
-    try { await this.ctrl(0x00, 0x0000); } catch(e){}
-    try { await this.dev.releaseInterface(this.ifNum); } catch(e){}
-    try { await this.dev.close(); } catch(e){}
+    try { await this.port?.close(); } catch(e){}
   }
 }
 
@@ -430,12 +414,20 @@ function setPill(text, cls){ const p = $('pill'); p.textContent = text.startsWit
 function note(text, bad){ $('connNote').textContent = text; $('connNote').className = 'note' + (bad ? ' bad' : ''); }
 
 function explain(e){
-  if (e.name === 'NotFoundError') return 'No modem chosen. Check it is plugged in, then pick it from the list.';
+  if (e.name === 'NotFoundError') return 'No modem chosen. Check it is plugged in (through an OTG adapter on a phone), then pick it from the list.';
   if (e.name === 'SecurityError') return 'The browser blocked hardware access on this page. Open it in its own tab.';
   if (e.name === 'InvalidStateError') return 'The modem is already open in another tab or app. Close that and try again.';
   if (e.name === 'NetworkError' || /claim|busy|access/i.test(e.message)) return 'The modem is in use or owned by a driver. On Windows, choose Web Serial.';
   return e.message;
 }
+
+// The USB chip choice only matters for WebUSB.
+function syncChipRow(){
+  const m = $('method').value;
+  $('usbChipRow').classList.toggle('hidden', !('usb' in navigator) || m === 'serial' || m === 'sim' || (m === 'auto' && !isAndroid && 'serial' in navigator));
+}
+$('method').addEventListener('change', syncChipRow);
+syncChipRow();
 
 function pickMethod(){
   const m = $('method').value;
@@ -448,9 +440,10 @@ function pickMethod(){
 async function connect(){
   const m = pickMethod();
   if (m === 'sim' && !window.HARTSim) return note('The simulator did not load. Reload the page.', true);
+  if (m === 'usb' && !window.USBSerial) return note('The USB driver did not load. Reload the page.', true);
   if (m === 'usb' && !('usb' in navigator)) return note('WebUSB is not available in this browser. Use Chrome or Edge.', true);
   if (m === 'serial' && !('serial' in navigator)) return note('Web Serial is not available in this browser. Try WebUSB.', true);
-  const t = m === 'sim' ? new SimTransport() : m === 'usb' ? new UsbCp210xTransport() : new SerialTransport();
+  const t = m === 'sim' ? new SimTransport() : m === 'usb' ? new UsbSerialTransport() : new SerialTransport();
   try {
     await t.open();
     transport = t;
@@ -1339,7 +1332,7 @@ $('btnShare').onclick = async () => {
   catch(e){ if (e.name !== 'AbortError'){ $('btnShare').textContent = 'Share blocked'; setTimeout(() => $('btnShare').textContent = 'Share log', 2500); } }
 };
 if (!navigator.share) $('btnShare').classList.add('hidden');
-if ('usb' in navigator) navigator.usb.addEventListener('disconnect', () => { if (transport instanceof UsbCp210xTransport) lostConnection(); });
+if ('usb' in navigator) navigator.usb.addEventListener('disconnect', () => { if (transport instanceof UsbSerialTransport) lostConnection(); });
 if ('serial' in navigator) navigator.serial.addEventListener('disconnect', () => { if (transport instanceof SerialTransport) lostConnection(); });
 
 log(`Started: ${navigator.userAgent}`);
@@ -1350,7 +1343,7 @@ log(`serial=${'serial' in navigator} usb=${'usb' in navigator} android=${isAndro
 /* ================= App shell: navigation, install, theme, offline ================= */
 (() => {
 'use strict';
-const APP_VERSION = '4.0.0';
+const APP_VERSION = '4.1.0';
 const $ = id => document.getElementById(id);
 
 // Navigation
