@@ -7,7 +7,7 @@ Browser-based HART communicator PWA. Talks to field devices through a USB HART m
 James is an instrumentation technician, not a software developer. He edits through the GitHub web UI and does not use a terminal.
 
 - Do the work yourself, then explain what changed in plain words. Don't hand him command-line steps.
-- His test hardware: a Wishcolor SMC-100C HART modem (CP210x USB chip, vendor ID `0x10C4`) and a Pixel 9a.
+- His test hardware: a Wishcolor SMC-100C HART modem (CP210x USB chip, vendor ID `0x10C4`), a Pepperl+Fuchs Viator USB HART Interface HM-PF-USB-010031 (vendor ID `0x10E5`, product `0x0031`, chip not yet confirmed) and a Pixel 9a.
 - Ground protocol details in the HART specifications (FieldComm Group) or the device manufacturer's manual, and say which. Don't guess command numbers or byte layouts.
 
 ## Stack and rules
@@ -25,7 +25,7 @@ Cloudflare Pages, build output directory `public`. `wrangler.jsonc` is only used
 ## Code map (`public/app.js`)
 
 - Lookup tables near the top: `UNITS` (HART unit codes), `MFR` (manufacturer IDs), `TRANSFER`, `ALARM`, `RESP`/`RESP_CMD` (response codes), `STATUS_BITS`, `EXT_BITS`.
-- Transports: `SerialTransport` (Web Serial) and `UsbCp210xTransport` (WebUSB, drives the CP210x directly). Both run **1200 baud, 8 data bits, odd parity, 1 stop bit**. Don't change these.
+- Transports: `SerialTransport` (Web Serial) and `UsbSerialTransport` (WebUSB, drives the modem's USB chip through `usb-serial.js`). Both run **1200 baud, 8 data bits, odd parity, 1 stop bit**. Don't change these.
 - Framing: `frame()`, `parseFrame()`, `transact()`, `cmd()`. All bus traffic goes through `exclusive()` so only one transaction runs at a time; keep it that way.
 - Device: `identify()`, `loadDetails()`, `scan()` (poll addresses 0–15), `liveLoop()`.
 - Writes: `runWrite()` handles confirmation and the change history. `raw: true` returns the reply even for error response codes (used by the console).
@@ -34,6 +34,7 @@ Cloudflare Pages, build output directory `public`. `wrangler.jsonc` is only used
 
 ## Other files in `public/`
 
+- `usb-serial.js` (`window.USBSerial`): WebUSB drivers for CP210x, FTDI, PL2303, CH34x and CDC-ACM, the known-modem table (`MODEMS`, including the P+F Viator USB, VID `0x10E5` PID `0x0031`, chip auto-detected), and chip detection by read-only probes. Used by the app and listen mode.
 - `hart-core.js` (`window.HART`): frame codec, byte scanner, universal/common-practice command dictionary, serial-log importers, capture analysis, reports, passive listen mode.
 - `profiles.js` (`window.HARTProfiles`): device profiles from Rosemount FDS documents and the per-device-type layout templates (localStorage). Don't add byte layouts to profiles without the FDS or a capture.
 - `sim.js` (`window.HARTSim`): simulated HART 5 temperature and HART 7 pressure devices. Its 140/141 layout is simulator-only; simulator templates are never applied to real devices.

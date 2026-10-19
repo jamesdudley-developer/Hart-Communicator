@@ -703,7 +703,7 @@ function textReport(session, compare = null, label = '') {
 //
 // Two routes, same as the main app:
 //   Web Serial  — Edge/Chrome on Windows, and Android where the Serial API is available
-//   WebUSB      — Chrome on Android, with a minimal CP210x driver (SMC-100C uses a CP210x)
+//   WebUSB      — Chrome on Android, through usb-serial.js (CP210x, FTDI, PL2303, CH34x, CDC, Viator)
 //
 // Line settings: 1200 baud, 8 data bits, odd parity, 1 stop bit.
 // RTS is held low so the modem stays in receive mode.
@@ -711,10 +711,6 @@ function textReport(session, compare = null, label = '') {
 const CP210X_VID = 0x10c4;
 const HART_BAUD = 1200;
 
-// CP210x vendor requests (Silicon Labs AN571).
-const CP = { IFC_ENABLE: 0x00, SET_LINE_CTL: 0x03, SET_MHS: 0x07, SET_BAUDRATE: 0x1e, PURGE: 0x12 };
-const LINE_8O1 = 0x0810;              // 8 data bits, odd parity, 1 stop bit
-const MHS_DTR_ON_RTS_OFF = 0x0301;    // DTR high, RTS low, both masks set
 
 function liveSupport() {
   return {
@@ -751,37 +747,20 @@ class SerialListener {
   }
 }
 
-class Cp210xListener {
-  constructor(device) { this.dev = device; this.kind = 'WebUSB (CP210x)'; this.stopped = false; }
-  async ctrl(request, value, data) {
-    const setup = { requestType: 'vendor', recipient: 'interface', request, value, index: this.iface };
-    const r = await this.dev.controlTransferOut(setup, data);
-    if (r.status !== 'ok') throw new Error(`CP210x request 0x${request.toString(16)} failed`);
-  }
+// WebUSB listener on any modem chip usb-serial.js supports (CP210x, FTDI, PL2303, CH34x, CDC,
+// P+F Viator). RTS is driven low once at open so the modem stays in receive mode; nothing is written.
+class UsbListener {
+  constructor(device) { this.dev = device; this.kind = 'WebUSB'; this.stopped = false; this.port = null; }
   async open() {
-    const d = this.dev;
-    await d.open();
-    if (d.configuration === null) await d.selectConfiguration(1);
-    const itf = d.configuration.interfaces[0];
-    this.iface = itf.interfaceNumber;
-    await d.claimInterface(this.iface);
-    const ep = itf.alternate.endpoints.find(e => e.direction === 'in' && e.type === 'bulk');
-    if (!ep) throw new Error('No bulk IN endpoint on this USB device');
-    this.epIn = ep.endpointNumber;
-    this.packet = ep.packetSize || 64;
-    await this.ctrl(CP.IFC_ENABLE, 0x0001);
-    const baud = new DataView(new ArrayBuffer(4)); baud.setUint32(0, HART_BAUD, true);
-    await this.ctrl(CP.SET_BAUDRATE, 0, baud.buffer);
-    await this.ctrl(CP.SET_LINE_CTL, LINE_8O1);
-    await this.ctrl(CP.SET_MHS, MHS_DTR_ON_RTS_OFF);
-    try { await this.ctrl(CP.PURGE, 0x000f); } catch {}
+    if (!window.USBSerial) throw new Error('The USB driver did not load. Reload the page.');
+    this.port = await window.USBSerial.openDevice(this.dev, { chip: 'auto', dtr: true });
+    this.kind = `WebUSB (${this.port.name})`;
   }
   async run(onBytes, isRunning) {
     while (isRunning() && !this.stopped) {
       try {
-        const r = await this.dev.transferIn(this.epIn, this.packet);
-        if (r.status === 'ok' && r.data?.byteLength) onBytes(new Uint8Array(r.data.buffer, r.data.byteOffset, r.data.byteLength));
-        else if (r.status === 'stall') await this.dev.clearHalt('in', this.epIn);
+        const b = await this.port.read();
+        if (b.length) onBytes(b);
       } catch (e) {
         if (!isRunning() || this.stopped) break;
         onBytes(null, e);
@@ -791,20 +770,22 @@ class Cp210xListener {
   }
   async close() {
     this.stopped = true;
-    try { await this.ctrl(CP.IFC_ENABLE, 0x0000); } catch {}
-    try { await this.dev.releaseInterface(this.iface); } catch {}
-    try { await this.dev.close(); } catch {}
+    try { await this.port?.close(); } catch {}
   }
 }
+// Kept for anything that still refers to the v4.0 name.
+const Cp210xListener = UsbListener;
 
 async function requestListener(route) {
+  const U = window.USBSerial;
   if (route === 'serial') {
-    const port = await navigator.serial.requestPort({ filters: [{ usbVendorId: CP210X_VID }] })
+    const filters = U ? U.serialFilters() : [{ usbVendorId: CP210X_VID }];
+    const port = await navigator.serial.requestPort({ filters })
       .catch(e => { if (e.name === 'NotFoundError') return navigator.serial.requestPort(); throw e; });
     return new SerialListener(port);
   }
-  const device = await navigator.usb.requestDevice({ filters: [{ vendorId: CP210X_VID }] });
-  return new Cp210xListener(device);
+  const device = U ? await U.requestDevice() : await navigator.usb.requestDevice({ filters: [{ vendorId: CP210X_VID }] });
+  return new UsbListener(device);
 }
 
 const pad = (n, w = 2) => String(n).padStart(w, '0');
@@ -848,7 +829,7 @@ window.HART = {
   describeCommand, safeDecode,
   importText, importBinary, importAny,
   framesFromChunks, buildTransactions, analyze, compareSessions, profileDraft, textReport,
-  CP210X_VID, liveSupport, SerialListener, Cp210xListener, requestListener, Recorder, listen, stamp,
+  CP210X_VID, liveSupport, SerialListener, UsbListener, Cp210xListener, requestListener, Recorder, listen, stamp,
   DEMO_CAPTURE,
 };
 })();

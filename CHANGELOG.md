@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.1.0
+
+- **More USB HART modems on Android.** WebUSB now has drivers for Silicon Labs CP210x, FTDI, Prolific PL2303, WCH CH340/CH341 and standard USB serial (CDC) chips, in a new shared file `usb-serial.js`.
+- **Pepperl+Fuchs (MACTek) Viator USB HART Interface, HM-PF-USB-010031** (and the older HM-MT-USB-010031): shows in the modem list (USB vendor ID `0x10E5`, product `0x0031`) and its chip is detected automatically when it opens.
+- New **USB chip** choice on the Live tab, for forcing a driver if detection picks the wrong one.
+- Every WebUSB connection writes the modem's USB description to the log, so an unknown modem can be identified from a shared log.
+- Listen mode (Capture tab) uses the same drivers, so a Viator can be the listening modem. It still never transmits.
+- The Wishcolor SMC-100C (CP210x) path is unchanged.
+
 ## 4.0.0
 
 Combines the deployed 3.0 app with the decoding, sniffing and device-profile work from October.
