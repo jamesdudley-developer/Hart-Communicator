@@ -2,8 +2,8 @@
 
 ## 4.4.0
 
-- **Device report.** New "Device report" panel on the Device tab. It reads the device again and opens a printable A4 report: job and location, device identification, range and output, sensor limits and serial number, process values at the time of the report, device status, changes written this session, notes and sign-off. "Save as PDF" uses the phone's or PC's own print dialog, so nothing leaves the device.
-- Company, site, technician and purpose are remembered on the phone between reports. Each report gets a number (HC-date-time-tag) that also becomes the PDF file name and appears in every page footer.
+- **Device report.** New "Device report" panel on the Device tab. It reads the device again and opens a printable A4 report: site and location, device identification, range and output, sensor limits and serial number, process values at the time of the report, device status, changes written this session and notes. "Save as PDF" uses the phone's or PC's own print dialog, so nothing leaves the device.
+- Site and purpose are remembered on the phone between reports. Each report gets a number that starts with the instrument tag (for example PT-205_20261019-1839); it also becomes the PDF file name and appears in every page footer.
 - The report reads only universal and common-practice commands (0, 2, 3, 7, 12, 13, 14, 15, 16, 20, 48, 50). The model number, extended model code and remote seal section is laid out but shows "Not yet decoded" until the manufacturer-specific command is mapped from a capture.
 - Reports from the simulator carry a clear "Simulated device" banner.
 

@@ -12,10 +12,11 @@ const p2 = n => String(n).padStart(2, '0');
 const dateTime = d => `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
 const timeOnly = d => `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
 
-// Report number: HC-YYMMDD-HHMM-TAG. Readable, sorts by date, unique enough per technician.
+// Report number: TAG_YYYYMMDD-HHMM (for example PT-205_20261019-1839). The tag comes first so
+// saved PDFs group by instrument. Characters that aren't safe in a file name become hyphens.
 function reportNo(d, tag){
-  const t = String(tag || 'DEVICE').toUpperCase().replace(/[^A-Z0-9]+/g, '').slice(0, 12) || 'DEVICE';
-  return `HC-${String(d.getFullYear()).slice(2)}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}-${t}`;
+  const t = String(tag || '').trim().toUpperCase().replace(/[^A-Z0-9.-]+/g, '-').replace(/-{2,}/g, '-').replace(/^[-.]+|[-.]+$/g, '').slice(0, 32) || 'UNTAGGED';
+  return `${t}_${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}`;
 }
 
 // Key/value table. Rows with value === undefined are skipped; null shows a dash.
@@ -52,15 +53,12 @@ function render(r){
   /* ---------- Header ---------- */
   let out = `<header class="rp-head">
     <div class="rp-brand">
-      ${j.company ? `<div class="rp-company">${esc(j.company)}</div>` : ''}
       <h1>Device Configuration Report</h1>
       <div class="rp-purpose">${esc(j.purpose || 'Configuration record')}</div>
     </div>
     <table class="rp-meta">
       <tr><th>Report no.</th><td class="rp-mono">${esc(no)}</td></tr>
       <tr><th>Date</th><td>${esc(dateTime(created))}</td></tr>
-      <tr><th>Technician</th><td>${esc(dash(j.technician))}</td></tr>
-      <tr><th>Work order</th><td>${esc(dash(j.workOrder))}</td></tr>
     </table>
   </header>`;
 
@@ -84,7 +82,7 @@ function render(r){
   /* ---------- 1 Job and location ---------- */
   const job = kv([
     ['Site', j.site || null], ['Area / location', j.location || null],
-    ['Purpose', j.purpose || null], ['Work order', j.workOrder || null]
+    ['Purpose', j.purpose || null]
   ]);
 
   /* ---------- 2 Device identification ---------- */
@@ -100,7 +98,7 @@ function render(r){
     ['Configuration change counter', d.cfgCount ?? undefined],
   ]);
 
-  out += `<div class="rp-grid">${section(1, 'Job and location', job)}${section(2, 'Device identification', ident)}</div>`;
+  out += `<div class="rp-grid">${section(1, 'Site and location', job)}${section(2, 'Device identification', ident)}</div>`;
 
   /* ---------- 3 Model code and options ---------- */
   const mc = r.modelCode || {};
@@ -182,13 +180,8 @@ function render(r){
     : '<p class="rp-none">No changes were written to the device in this session. The values above are as found.</p>';
   out += section(8, 'Changes made this session', chBody, 'rp-wide');
 
-  /* ---------- 9 Notes and sign-off ---------- */
+  /* ---------- 9 Notes ---------- */
   out += section(9, 'Notes', j.notes ? `<p class="rp-notes">${esc(j.notes).replace(/\n/g, '<br>')}</p>` : '<div class="rp-lines"><span></span><span></span><span></span></div>', 'rp-wide rp-keep');
-
-  out += `<section class="rp-sec rp-wide rp-keep rp-sign">
-    <div><span>Performed by</span><div class="rp-sigline">${esc(j.technician || '')}</div><small>Name, signature, date</small></div>
-    <div><span>Checked by</span><div class="rp-sigline"></div><small>Name, signature, date</small></div>
-  </section>`;
 
   out += `<p class="rp-disclaimer">Values were read directly from the device over HART using universal and common-practice commands by HART Communicator ${esc(r.meta.appVersion)}. This app is not a registered HART host and does not use device descriptions. For SIL-rated devices, verify configuration with the manufacturer's approved tools.</p>`;
 

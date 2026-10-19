@@ -1362,8 +1362,7 @@ function showConsoleReply(n, data, r, d){
 /* ================= Device report ================= */
 // Reads the device afresh with universal and common-practice commands only, then hands a
 // plain data object to report.js. No device-specific commands are sent from here.
-const REPORT_FIELDS = [['rpCompany','company',true],['rpSite','site',true],['rpLocation','location',false],
-  ['rpTech','technician',true],['rpWO','workOrder',false],['rpPurpose','purpose',true],['rpNotes','notes',false]];
+const REPORT_FIELDS = [['rpSite','site',true],['rpLocation','location',false],['rpPurpose','purpose',true],['rpNotes','notes',false]];
 const rstore = { get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }, set(k,v){ try { localStorage.setItem(k,v); } catch(e){} } };
 REPORT_FIELDS.forEach(([id, key, keep]) => { if (keep){ const v = rstore.get('hart-report-' + key); if (v != null) $(id).value = v; } });
 
