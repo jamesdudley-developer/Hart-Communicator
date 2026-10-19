@@ -289,3 +289,114 @@ code{font-family:var(--mono);font-size:.84rem;overflow-wrap:anywhere}
 @media (max-width:420px){ .tab{font-size:.64rem;padding:8px 0 9px} .tab svg{width:22px;height:22px} }
 .filerow{grid-template-columns:1fr}
 .filerow label{gap:6px}
+
+/* ---------- Device report (report.js) ----------
+   The report always uses fixed light print colours, so a dark-theme phone still
+   produces a normal white PDF. */
+.rp-input{font:inherit;font-size:.95rem;margin-top:0}
+.rp-view{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column}
+body.rp-open{overflow:hidden}
+.rp-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;
+  padding-top:calc(10px + env(safe-area-inset-top,0px));background:var(--bar);color:var(--bar-ink)}
+.rp-bar span{font:600 .85rem/1.2 var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.rp-scroll{flex:1;overflow:auto;padding:16px;-webkit-overflow-scrolling:touch}
+.rp-page{
+  --r-ink:#17242D; --r-muted:#5B6B76; --r-line:#D3DAE0; --r-soft:#F4F6F8; --r-accent:#E8A317;
+  --r-ok:#2E7D4F; --r-warn:#A85F00; --r-bad:#B3261E;
+  max-width:794px;margin:0 auto;background:#fff;color:var(--r-ink);border-radius:4px;
+  box-shadow:0 1px 3px rgba(0,0,0,.18),0 8px 24px rgba(0,0,0,.12);
+  padding:36px 40px 40px;font:13px/1.45 var(--font);color-scheme:light}
+.rp-page *{box-sizing:border-box}
+.rp-mono{font-family:var(--mono);font-size:.94em;letter-spacing:-.01em}
+
+.rp-head{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;padding-bottom:14px;border-bottom:3px solid var(--r-accent)}
+.rp-company{font-size:.78rem;font-weight:650;letter-spacing:.08em;text-transform:uppercase;color:var(--r-muted);margin-bottom:4px}
+.rp-head h1{font-size:1.55rem;line-height:1.15;font-weight:700;margin:0;letter-spacing:-.015em}
+.rp-purpose{display:inline-block;margin-top:8px;padding:2px 9px;border:1.5px solid var(--r-ink);border-radius:3px;
+  font-size:.72rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase}
+.rp-brand{flex:1 1 auto;min-width:0}
+.rp-meta{border-collapse:collapse;font-size:.8rem;flex:none;width:auto}
+.rp-meta th{text-align:left;font-weight:500;color:var(--r-muted);padding:1px 12px 1px 0;white-space:nowrap}
+.rp-meta td{font-weight:600;padding:1px 0;white-space:nowrap}
+
+.rp-banner{margin-top:12px;padding:7px 12px;border:1.5px dashed var(--r-warn);color:var(--r-warn);border-radius:4px;font-size:.8rem;font-weight:600}
+
+.rp-ident{display:flex;gap:18px;align-items:stretch;margin:16px 0 6px;padding:14px 16px;background:var(--r-soft);border-radius:6px;border-left:4px solid var(--r-ink)}
+.rp-ident-main{flex:1;min-width:0}
+.rp-tag{font-size:1.4rem;font-weight:700;line-height:1.15;letter-spacing:-.01em;overflow-wrap:anywhere}
+.rp-tagsub{color:var(--r-muted);font-size:.85rem;margin-top:2px;min-height:1em}
+.rp-model{font-weight:600;margin-top:8px;font-size:.92rem}
+.rp-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;flex:0 0 58%}
+.rp-tile{background:#fff;border:1px solid var(--r-line);border-radius:5px;padding:8px 10px;display:flex;flex-direction:column;justify-content:space-between;gap:4px}
+.rp-tile span{font-size:.68rem;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--r-muted)}
+.rp-tile b{font-size:.92rem;line-height:1.25}
+.rp-tile.ok b{color:var(--r-ok)} .rp-tile.warn b{color:var(--r-warn)} .rp-tile.bad b{color:var(--r-bad)}
+.rp-tile.ok{border-top:3px solid var(--r-ok)} .rp-tile.warn{border-top:3px solid var(--r-warn)} .rp-tile.bad{border-top:3px solid var(--r-bad)}
+
+.rp-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 26px}
+.rp-sec{margin-top:14px;break-inside:avoid}
+.rp-sec h2{display:flex;align-items:center;gap:8px;font-size:.78rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  margin:0 0 6px;padding-bottom:5px;border-bottom:1.5px solid var(--r-ink)}
+.rp-num{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:3px;background:var(--r-ink);color:#fff;font-size:.68rem;letter-spacing:0}
+.rp-kv{width:100%;border-collapse:collapse;font-size:.84rem}
+.rp-kv th{text-align:left;font-weight:500;color:var(--r-muted);padding:4px 10px 4px 0;width:48%;vertical-align:top}
+.rp-kv td{padding:4px 0;font-weight:600;vertical-align:top;overflow-wrap:anywhere}
+.rp-kv tr+tr th,.rp-kv tr+tr td{border-top:1px solid var(--r-line)}
+.rp-wide .rp-kv th{width:30%}
+.rp-dim{font-weight:400;color:var(--r-muted)}
+.rp-none{color:var(--r-muted);font-size:.84rem;margin:4px 0}
+
+.rp-pending{border:1.5px dashed var(--r-line);border-radius:5px;padding:4px 12px 8px}
+.rp-slot{color:var(--r-muted);font-weight:500 !important;font-style:italic}
+.rp-pending p{margin:6px 0 0;font-size:.76rem;color:var(--r-muted)}
+
+.rp-tbl{width:100%;border-collapse:collapse;font-size:.82rem}
+.rp-tbl th{text-align:left;font-size:.7rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--r-muted);padding:4px 8px 4px 0;border-bottom:1px solid var(--r-line)}
+.rp-tbl td{padding:5px 8px 5px 0;border-bottom:1px solid var(--r-line);vertical-align:top}
+.rp-tbl .rp-num-c{text-align:right;font-variant-numeric:tabular-nums;padding-right:16px}
+.rp-tbl tr.rp-loop td{background:var(--r-soft)}
+.rp-tbl tr.bad td{color:var(--r-bad)}
+.rp-foot{font-size:.74rem;color:var(--r-muted);margin:6px 0 0}
+
+.rp-flags{list-style:none;margin:0;padding:0;font-size:.84rem}
+.rp-flags li{padding:5px 0 5px 12px;border-left:3px solid var(--r-line);margin:3px 0}
+.rp-flags li span{color:var(--r-muted)}
+.rp-flags li.ok{border-color:var(--r-ok)} .rp-flags li.warn{border-color:var(--r-warn)} .rp-flags li.bad{border-color:var(--r-bad)}
+
+.rp-notes{font-size:.86rem;margin:4px 0;white-space:normal}
+.rp-lines span{display:block;height:26px;border-bottom:1px solid var(--r-line)}
+.rp-sign{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:22px}
+.rp-sign > div > span{font-size:.72rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase}
+.rp-sigline{height:40px;border-bottom:1.5px solid var(--r-ink);display:flex;align-items:flex-end;padding-bottom:3px;font-weight:600}
+.rp-sign small{font-size:.7rem;color:var(--r-muted)}
+.rp-disclaimer{margin:22px 0 0;padding-top:8px;border-top:1px solid var(--r-line);font-size:.68rem;line-height:1.4;color:var(--r-muted)}
+
+@media (max-width:640px){
+  .rp-scroll{padding:10px}
+  .rp-page{padding:20px 16px 24px;font-size:12.5px}
+  .rp-head{flex-direction:column;align-items:flex-start;gap:12px}
+  .rp-ident{flex-direction:column}
+  .rp-tiles{flex-basis:auto}
+  .rp-grid,.rp-sign{grid-template-columns:1fr}
+  .rp-tbl{font-size:.76rem}
+}
+
+@page{size:A4;margin:13mm 13mm 15mm;
+  @bottom-left{content:"HART Communicator · Device configuration report";font:8pt sans-serif;color:#5B6B76}
+  @bottom-right{content:"Page " counter(page) " of " counter(pages);font:8pt sans-serif;color:#5B6B76}}
+@media print{
+  body.rp-open{overflow:visible;background:#fff}
+  body.rp-open > *:not(#reportView){display:none !important}
+  body.rp-open .rp-view{position:static;display:block;background:#fff}
+  .rp-bar{display:none !important}
+  .rp-scroll{padding:0;overflow:visible}
+  .rp-page{max-width:none;box-shadow:none;border-radius:0;padding:0;font-size:9.6pt}
+  .rp-page,.rp-page *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .rp-head,.rp-ident,.rp-grid{break-inside:avoid}
+  .rp-head{flex-direction:row !important;align-items:flex-end !important}
+  .rp-ident{flex-direction:row !important}
+  .rp-grid{grid-template-columns:1fr 1fr !important}
+  .rp-sign{grid-template-columns:1fr 1fr !important}
+  .rp-sec h2{break-after:avoid}
+  .rp-tbl tr{break-inside:avoid}
+}

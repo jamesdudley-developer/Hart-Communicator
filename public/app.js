@@ -2,6 +2,7 @@
 (() => {
 'use strict';
 const $ = id => document.getElementById(id);
+const APP_VER = '4.4.0';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const hex = b => Array.from(b, x => x.toString(16).padStart(2,'0').toUpperCase()).join(' ');
 const hx = (n, w=2) => '0x' + n.toString(16).toUpperCase().padStart(w,'0');
@@ -348,6 +349,7 @@ function renderDevice(info, det){
   fillForms(det);
   renderDevice2();
   $('dvCard').classList.remove('hidden');
+  $('rptCard').classList.remove('hidden');
 }
 
 // Adds the measurement type under the device identity once it is known.
@@ -476,7 +478,7 @@ async function connectDevice(poll){
   while (liveRunning) await sleep(50);
   $('scanList').innerHTML = '';
   dev = null; lastDeviceStatus = null; cmd48Data = null; st = null; $('stBody').classList.add('hidden');
-  prof = null; snRead = null; ['profCard','snCard','conCard'].forEach(id => $(id).classList.add('hidden')); $('snBytes').classList.add('hidden'); $('conResult').classList.add('hidden');
+  prof = null; snRead = null; ['profCard','snCard','conCard','rptCard'].forEach(id => $(id).classList.add('hidden')); $('snBytes').classList.add('hidden'); $('conResult').classList.add('hidden');
   dvList = null; dvMap = null; $('dvBody').classList.add('hidden'); $('dvList').innerHTML = ''; $('dvLoad').textContent = 'Load';
   $('dvHint').textContent = 'Reads every device variable with its type, live value, status and limits (HART Commands 9, 50 and 54).';
   setPill('Reading device…', 'busy');
@@ -1357,7 +1359,129 @@ function showConsoleReply(n, data, r, d){
   $('conHistWrap').classList.remove('hidden');
 }
 
+/* ================= Device report ================= */
+// Reads the device afresh with universal and common-practice commands only, then hands a
+// plain data object to report.js. No device-specific commands are sent from here.
+const REPORT_FIELDS = [['rpCompany','company',true],['rpSite','site',true],['rpLocation','location',false],
+  ['rpTech','technician',true],['rpWO','workOrder',false],['rpPurpose','purpose',true],['rpNotes','notes',false]];
+const rstore = { get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }, set(k,v){ try { localStorage.setItem(k,v); } catch(e){} } };
+REPORT_FIELDS.forEach(([id, key, keep]) => { if (keep){ const v = rstore.get('hart-report-' + key); if (v != null) $(id).value = v; } });
+
+function rptMsg(text, cls){ const n = $('rpNote'); n.textContent = text; n.className = 'cfgnote ' + (cls || ''); n.classList.toggle('hidden', !text); }
+
+async function collectReport(){
+  const info = dev, created = new Date();
+  const det = await loadDetails();
+  renderDevice(info, det);   // keep the Device tab in step with what the report shows
+  const tryCmd = async (n, data=[]) => { try { return (await cmd(n, data, { quiet:true })).data; } catch(e){ log(`Report: ${e.message}`); return null; } };
+
+  const job = {};
+  REPORT_FIELDS.forEach(([id, key, keep]) => { job[key] = $(id).value.trim(); if (keep) rstore.set('hart-report-' + key, job[key]); });
+
+  const mfr = MFR[info.mfrId] || `Manufacturer ${hx(info.mfrId)}`;
+  const device = {
+    mfr, model: prof?.profile.model?.replace(/^Rosemount\s+/, '') || null,
+    devTypeHex: hx(info.devType, info.rev >= 7 ? 4 : 2), devId: info.devId, hartRev: info.rev,
+    devRev: info.devRev, swRev: info.swRev, hwRev: info.hwRev, fan: det.fan, poll: info.poll,
+    cfgCount: info.cfgCount, tag: det.tag, longTag: det.longTag, desc: det.desc, msg: det.msg, date: det.date
+  };
+  if (device.mfr && device.model && prof?.profile.model?.startsWith(device.mfr)) device.model = prof.profile.model.slice(device.mfr.length).trim();
+
+  // Range and output (Command 15), loop current mode (Command 7, HART 6 and later)
+  let range = null;
+  if (det.range){
+    const r = det.range;
+    range = {
+      unitsText: unitName(r.units), lrvText: fmt(r.lrv), urvText: fmt(r.urv), spanText: fmt(r.urv - r.lrv),
+      dampingText: fmt(r.damping), transferText: TRANSFER[r.transfer] ?? `Code ${r.transfer}`,
+      alarmText: ALARM[r.alarm] ?? `Code ${r.alarm}`, wpText: WRITEPROT[r.wp] ?? `Code ${r.wp}`
+    };
+    if (info.rev >= 6){
+      const d7 = await tryCmd(7);
+      if (d7 && d7.length >= 2) range.loopModeText = d7[1] === 0 ? 'Disabled (multidrop, fixed at 4 mA)' : 'Enabled (4–20 mA follows PV)';
+    }
+  }
+
+  // Sensor (Command 14), plus the sensor setup from Tools when its layout is known
+  let sensor = null;
+  const d14 = await tryCmd(14);
+  if (d14 && d14.length >= 16){
+    const u = unitName(d14[3]), serial = (d14[0] << 16) | (d14[1] << 8) | d14[2];
+    sensor = { serial: serial || null, unitsText: u, uslText: fmt(f32(d14,4)), lslText: fmt(f32(d14,8)), minSpanText: fmt(f32(d14,12)) };
+  }
+  if (prof?.profile.sensor){
+    sensor = sensor || {};
+    const t = snTemplate(), p = prof.profile;
+    if (snRead && t && t.readTypeIdx != null && snRead.length > t.readTypeIdx){
+      sensor.type = P.sensorName(p, snRead[t.readTypeIdx]);
+      if (t.readConnIdx != null && snRead.length > t.readConnIdx) sensor.wiring = P.connName(snRead[t.readConnIdx]);
+    } else {
+      sensor.note = t ? 'Read the sensor setup under Tools to include sensor type and wiring.' : 'Sensor type and wiring are not included until the sensor setup layout is learned from a capture (see Tools).';
+    }
+  }
+
+  // Process values (Command 3) with the PV/SV/TV/QV mapping (Command 50)
+  let dyn = null;
+  const d3 = await tryCmd(3);
+  if (d3 && d3.length >= 4){
+    const mA = f32(d3, 0);
+    let map = null;
+    if (info.rev >= 5){ const d50 = await tryCmd(50); if (d50 && d50.length >= 4) map = Array.from(d50.slice(0,4)); }
+    const vars = [];
+    for (let i = 0, o = 4; o + 5 <= d3.length && i < 4; i++, o += 5){
+      const code = map ? map[i] : null;
+      const v = dvList?.find(x => x.code === code);
+      vars.push({ slot: SLOT[i], dv: code == null || code === 250 ? null : (v ? `DV ${v.code} · ${DV_CLASS[v.cls] ?? 'Class ' + v.cls}` : `DV ${code}`),
+        valueText: fmt(f32(d3, o + 1)), unitsText: unitName(d3[o]),
+        limits: v ? `${fmt(v.lsl)} to ${fmt(v.usl)} ${unitName(v.limUnits)}` : null });
+    }
+    let pctText = null;
+    const d2 = await tryCmd(2);
+    if (d2 && d2.length >= 8) pctText = fmt(f32(d2, 4));
+    dyn = { at: new Date(), mAText: fmt(mA), pctText, vars,
+      mapNote: map ? null : 'variable mapping not read' };
+    if (!dvList) dyn.mapNote = 'sensor limits per variable appear once device variables are loaded on the Variables tab';
+  }
+
+  // Status (status byte from the last reply, extended status and Command 48)
+  const s = lastDeviceStatus ?? 0, flags = [], ext = [];
+  STATUS_BITS.forEach(([bit, t, sub, cls]) => { if (s & bit) flags.push({ title: t, sub, cls }); });
+  const e = det.cmd48 && det.cmd48.length > 6 ? det.cmd48[6] : info.ext;
+  if (e) EXT_BITS.forEach(([bit, t]) => { if (e & bit) ext.push({ title: t, sub: 'NAMUR NE 107 category', cls: bit & 0x0C ? 'bad' : 'warn' }); });
+  const status = { flags, ext, cmd48: det.cmd48 && det.cmd48.some(b => b) ? hex(det.cmd48) : null };
+
+  const modelCode = {
+    note: prof && !prof.profile.suspect
+      ? `${mfr} holds the full model code in manufacturer-specific commands. These fields fill in automatically once that command is mapped from a capture of ${P.hostTool(info.mfrId)} or the Field Device Specification.`
+      : 'The full model code is held in manufacturer-specific commands, which are not mapped for this device yet.'
+  };
+
+  return {
+    meta: { created, appVersion: APP_VER, sim: isSim() },
+    job, device, modelCode, range, sensor, dyn, status,
+    changes: changes.map(c => ({ ...c }))
+  };
+}
+
+async function createReport(){
+  if (!dev || cfgBusy) return;
+  if (!window.HARTReport) return rptMsg('The report module did not load. Reload the page.', 'bad');
+  const btn = $('rpCreate'); btn.disabled = true;
+  rptMsg('Reading the device for the report…');
+  try {
+    const data = await pauseLive(collectReport);
+    const no = window.HARTReport.open(data);
+    log(`Report ${no} created`);
+    rptMsg(`Report ${no} is ready. Use "Save as PDF" and choose Save as PDF as the printer.`, 'ok');
+  } catch(e){
+    log(`Report failed: ${e.message}`, 'er');
+    rptMsg(`The report could not be created: ${e.message}`, 'bad');
+  }
+  btn.disabled = false;
+}
+
 function bindTools(){
+  $('rpCreate').onclick = createReport;
   $('snReadBtn').onclick = readSensor;
   $('snPreview').onclick = previewSensor;
   $('snWrite').onclick = writeSensor;
@@ -1428,7 +1552,7 @@ log(`serial=${'serial' in navigator} usb=${'usb' in navigator} android=${isAndro
 /* ================= App shell: navigation, install, theme, offline ================= */
 (() => {
 'use strict';
-const APP_VERSION = '4.3.1'; // must match VERSION in sw.js
+const APP_VERSION = '4.4.0'; // must match VERSION in sw.js
 const $ = id => document.getElementById(id);
 
 // Navigation

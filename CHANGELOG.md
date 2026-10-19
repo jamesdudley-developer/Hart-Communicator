@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.4.0
+
+- **Device report.** New "Device report" panel on the Device tab. It reads the device again and opens a printable A4 report: job and location, device identification, range and output, sensor limits and serial number, process values at the time of the report, device status, changes written this session, notes and sign-off. "Save as PDF" uses the phone's or PC's own print dialog, so nothing leaves the device.
+- Company, site, technician and purpose are remembered on the phone between reports. Each report gets a number (HC-date-time-tag) that also becomes the PDF file name and appears in every page footer.
+- The report reads only universal and common-practice commands (0, 2, 3, 7, 12, 13, 14, 15, 16, 20, 48, 50). The model number, extended model code and remote seal section is laid out but shows "Not yet decoded" until the manufacturer-specific command is mapped from a capture.
+- Reports from the simulator carry a clear "Simulated device" banner.
+
 ## 4.3.1
 
 - **Fix: installed apps not seeing updates.** The app now asks for its update file by version number, so a cached older copy (on the phone or at Cloudflare) can't hide a new release. It also checks for updates whenever the app is brought back on screen, not only when it's first opened.
