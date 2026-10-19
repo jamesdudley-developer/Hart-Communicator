@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.2.0
+
+- **Wording follows the connected device.** The app works out what the device measures from the device profile, the PV's device variable class (Command 54) or the PV units (Command 15), and shows it on the Device tab as "Measurement".
+- Configure tab: the units list only offers units that fit the device (a temperature transmitter gets °C, °F, K, °R plus mV and ohms). Sensor trim, zero and push-button ranging text and confirmations talk about temperature, pressure or level to suit, or stay generic when the type isn't known.
+- No brand names unless the device identifies its maker. The "sensor trim not supported" message names the maker's own software only when the manufacturer ID matches (AMS for Rosemount, PACTware with the VEGA DTM for VEGA, FieldCare or DeviceCare for Endress+Hauser); otherwise it says "the manufacturer's configuration software". The Capture tab no longer assumes AMS.
+- Tools tab: sensor setup is hidden for devices that aren't temperature inputs, and no longer lists Rosemount models on other makers' devices.
+
 ## 4.1.0
 
 - **More USB HART modems on Android.** WebUSB now has drivers for Silicon Labs CP210x, FTDI, Prolific PL2303, WCH CH340/CH341 and standard USB serial (CDC) chips, in a new shared file `usb-serial.js`.

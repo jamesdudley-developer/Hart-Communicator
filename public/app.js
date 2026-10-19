@@ -244,7 +244,7 @@ async function cmd(number, data=[], opts={}){
 
 /* ================= Commands ================= */
 async function identify(poll){
-  dev = null;
+  dev = null; pvClass = null;
   const r = await cmd(0, [], { poll });
   const d = r.data;
   if (d.length < 12 || d[0] !== 0xFE) throw new Error('Unexpected Command 0 reply');
@@ -326,6 +326,7 @@ function renderDevice(info, det){
     ['Final assembly number', det.fan], ['Device variables', info.nVars],
     ['Configuration change counter', info.cfgCount]
   ]);
+  measRow = null;
   $('devCard').classList.remove('hidden');
 
   if (det.range){
@@ -345,7 +346,18 @@ function renderDevice(info, det){
   lastDet = det;
   renderProfile(info);
   fillForms(det);
+  renderDevice2();
   $('dvCard').classList.remove('hidden');
+}
+
+// Adds the measurement type under the device identity once it is known.
+let measRow = null;
+function renderDevice2(){
+  const { kind, from } = measKind();
+  if (!kind || !$('devTable').rows.length) return;
+  if (!measRow){ measRow = $('devTable').insertRow(0); measRow.insertCell(); measRow.insertCell(); }
+  measRow.cells[0].textContent = 'Measurement';
+  measRow.cells[1].textContent = `${KIND_LABEL[kind]} (from the ${from})`;
 }
 
 /* ================= Live polling ================= */
@@ -565,20 +577,88 @@ const latin1Bytes = (s, n) => Array.from(s.padEnd(n, ' ').slice(0, n), c => c.ch
 const num = id => { const v = $(id).value.trim(); return v === '' ? NaN : Number(v); };
 const tidy = v => isFinite(v) ? Number(v.toPrecision(7)) : '';
 
+/* ----- Measurement type of the connected device -----
+   Worked out from what the device itself reports, in this order: the matched device profile,
+   the device variable class of the PV (Command 54, HART Common Table 21), then the PV unit
+   code (Command 15, HART Common Table 2). Until one of these is known, the app stays generic. */
 const UNIT_GROUPS = [
-  ['Pressure', [7,8,12,11,237,6,1,4,238,239,145,3,2,5,9,10,13,14]],
-  ['Level and length', [45,49,48,44,47]],
-  ['Other', [57,32,33,35,39,58,36]]
+  ['temperature', 'Temperature', [32,33,35,34]],
+  ['pressure', 'Pressure', [7,8,12,11,237,6,1,4,238,239,145,3,2,5,9,10,13,14]],
+  ['level', 'Level and length', [45,49,48,44,47]],
+  ['flow', 'Volumetric flow', [19,28,29,24,17,16,15,26,27,22,23,25,18,30,31]],
+  ['massflow', 'Mass flow', [75,73,74,76,78,77,79,82,80,81,83,70,71,72]],
+  ['volume', 'Volume', [43,41,40,42,46]],
+  ['mass', 'Mass', [61,60,62,63,64,65]],
+  ['density', 'Density', [92,91,97,96,95,93,94,90]],
+  ['electrical', 'Electrical', [36,37,39,58,38]],
+  ['analytical', 'Analytical', [59,66,67,56]],
+  ['other', 'Other', [57,20,21,54,55,68,69]]
 ];
-(function buildUnitSelect(){
+const KIND_LABEL = Object.fromEntries(UNIT_GROUPS.map(([k, l]) => [k, l]));
+// Unit groups offered for each kind. A temperature input can also be read as mV or ohms.
+const KIND_UNITS = { temperature:['temperature','electrical'], electrical:['electrical','temperature'] };
+const DV_CLASS_KIND = {64:'temperature',65:'pressure',66:'flow',68:'volume',69:'level',71:'mass',72:'massflow',73:'density',81:'analytical'};
+const unitKind = c => c == null ? null : (UNIT_GROUPS.find(g => g[2].includes(c))?.[0] ?? null);
+let pvClass = null;   // device variable class of the PV, once Command 54 has been read
+
+function measKind(){
+  if (prof?.profile.kind) return { kind: prof.profile.kind, from: 'device profile' };
+  if (DV_CLASS_KIND[pvClass]) return { kind: DV_CLASS_KIND[pvClass], from: 'PV device variable class' };
+  const k = unitKind(lastDet?.range?.units);
+  return k ? { kind: k, from: 'PV units' } : { kind: null, from: '' };
+}
+
+// Wording for trims and push-button ranging, matched to what the device measures.
+function kindText(kind){
+  switch (kind){
+    case 'pressure': return { ref:'a reference pressure', apply:'Apply the reference pressure',
+      zeroHint:'These use the pressure applied right now. Vent or apply the reference pressure first and let it settle.',
+      zeroBtn:'Zero PV (position correction)', zero:['The pressure applied right now becomes zero (position correction).', 'Make sure the transmitter is vented or at the true zero reference.'],
+      now:'pressure applied right now' };
+    case 'temperature': return { ref:'a reference temperature or a sensor simulator on the input', apply:'Put the sensor in the reference bath or dry-block, or set the sensor simulator on the input',
+      zeroHint:'These use the temperature the device measures right now. Bring the sensor to the reference temperature, or set the simulator, and let it settle.',
+      zeroBtn:'Zero PV (offset)', zero:['The temperature measured right now becomes zero.', 'Make sure the sensor is at the true zero reference.'],
+      now:'temperature measured right now' };
+    case 'level': return { ref:'a reference level', apply:'Bring the level to the reference point',
+      zeroHint:'These use the level the device measures right now. Bring the level to the reference point first and let it settle.',
+      zeroBtn:'Zero PV', zero:['The level measured right now becomes zero.', 'Make sure the level is at the true zero reference.'],
+      now:'level measured right now' };
+    default: { const n = KIND_LABEL[kind] ? KIND_LABEL[kind].toLowerCase() + ' value' : 'value';
+      return { ref:`a reference ${n} from a calibrator`, apply:`Apply the reference ${n}`,
+      zeroHint:`These use the ${n} the device measures right now. Bring the input to the reference first and let it settle.`,
+      zeroBtn:'Zero PV', zero:[`The ${n} measured right now becomes zero.`, 'Make sure the input is at the true zero reference.'],
+      now:`${n} measured right now` }; }
+  }
+}
+
+function fillUnitSelect(kind, keep){
   const sel = $('fUnits');
-  UNIT_GROUPS.forEach(([g, codes]) => {
-    const og = document.createElement('optgroup'); og.label = g;
+  sel.innerHTML = '';
+  const show = kind ? (KIND_UNITS[kind] || [kind]) : UNIT_GROUPS.map(g => g[0]);
+  UNIT_GROUPS.filter(g => show.includes(g[0])).forEach(([, label, codes]) => {
+    const og = document.createElement('optgroup'); og.label = label;
     codes.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = UNITS[c]; og.appendChild(o); });
     sel.appendChild(og);
   });
-  for (let a = 0; a <= 63; a++){ const o = document.createElement('option'); o.value = a; o.textContent = a; $('fPoll').appendChild(o); }
-})();
+  if (keep != null && ![...sel.options].some(o => +o.value === keep)){
+    const o = document.createElement('option'); o.value = keep; o.textContent = unitName(keep); sel.appendChild(o);
+  }
+  if (keep != null) sel.value = keep;
+}
+
+// Applies the measurement type to every label that depends on it.
+function applyKind(){
+  const { kind } = measKind(), t = kindText(kind);
+  const cur = $('fUnits').value;
+  fillUnitSelect(kind, cur !== '' ? +cur : lastDet?.range?.units ?? null);
+  $('stIntro').textContent = `Corrects the sensor reading against ${t.ref}.`;
+  $('stApply').textContent = `${t.apply}, wait for the live reading to settle, then enter the calibrator's value. Do the lower point first.`;
+  $('zrHint').textContent = t.zeroHint;
+  $('wZero').textContent = t.zeroBtn;
+}
+
+fillUnitSelect(null);
+for (let a = 0; a <= 63; a++){ const o = document.createElement('option'); o.value = a; o.textContent = a; $('fPoll').appendChild(o); }
 
 function fillForms(det){
   $('cfgCard').classList.remove('hidden');
@@ -590,15 +670,12 @@ function fillForms(det){
   $('wLongTag').disabled = dev.rev < 6;
   const r = det.range;
   if (r){
-    const sel = $('fUnits');
-    if (![...sel.options].some(o => +o.value === r.units)){
-      const o = document.createElement('option'); o.value = r.units; o.textContent = unitName(r.units); sel.appendChild(o);
-    }
-    sel.value = r.units;
+    fillUnitSelect(measKind().kind, r.units);
     $('fLrv').value = tidy(r.lrv); $('fUrv').value = tidy(r.urv); $('fDamp').value = tidy(r.damping);
     $('wpWarn').classList.toggle('hidden', r.wp !== 1);
   }
   $('fPoll').value = dev.poll;
+  applyKind();
 }
 
 function cfgMsg(text, cls){ const n = $('cfgNote'); n.textContent = text; n.className = 'cfgnote ' + (cls || ''); }
@@ -737,7 +814,7 @@ async function checkSensorTrim(){
   } catch(e){
     st = null;
     const msg = /not implemented/i.test(e.message)
-      ? 'This device does not support the standard sensor trim commands. Use the manufacturer\'s tool (for VEGA, PACTware with the VEGA DTM) or Zero PV for a zero offset.'
+      ? `This device does not support the standard sensor trim commands. Use ${P.hostTool(dev.mfrId)}, or Zero PV for a zero offset if the device supports it.`
       : `Sensor trim check failed: ${e.message.replace(/^Command \d+: /,'')}.`;
     cfgMsg(msg, 'bad');
   }
@@ -850,12 +927,12 @@ function bindWrites(){
   $('stLowBtn').onclick = () => sensorTrim(1);
   $('stHighBtn').onclick = () => sensorTrim(2);
   $('stReset').onclick = resetSensorTrim;
-  $('wZero').onclick = () => runWrite({ label:'Zero PV', n:43, output:true,
-    lines:['The pressure applied right now becomes zero (position correction).', 'Make sure the transmitter is vented or at the true zero reference.'], detail:'PV zeroed at applied pressure.' });
-  $('wSetLrv').onclick = () => runWrite({ label:'Set LRV to applied', n:37, output:true,
-    lines:['The pressure applied right now becomes the 4 mA point.', 'The span is kept the same, so the URV moves too.'], detail:'LRV set to applied pressure.' });
-  $('wSetUrv').onclick = () => runWrite({ label:'Set URV to applied', n:36, output:true,
-    lines:['The pressure applied right now becomes the 20 mA point.', 'The LRV stays where it is.'], detail:'URV set to applied pressure.' });
+  $('wZero').onclick = () => { const t = kindText(measKind().kind); runWrite({ label:'Zero PV', n:43, output:true,
+    lines:t.zero, detail:`PV zeroed at the ${t.now.replace(/ right now$/, '')}.` }); };
+  $('wSetLrv').onclick = () => { const t = kindText(measKind().kind); runWrite({ label:'Set LRV to applied', n:37, output:true,
+    lines:[`The ${t.now} becomes the 4 mA point.`, 'The span is kept the same, so the URV moves too.'], detail:`LRV set to the ${t.now.replace(/ right now$/, '')}.` }); };
+  $('wSetUrv').onclick = () => { const t = kindText(measKind().kind); runWrite({ label:'Set URV to applied', n:36, output:true,
+    lines:[`The ${t.now} becomes the 20 mA point.`, 'The LRV stays where it is.'], detail:`URV set to the ${t.now.replace(/ right now$/, '')}.` }); };
 
   $('wPoll').onclick = async () => {
     const a = +$('fPoll').value, on = $('fLoopMode').checked;
@@ -928,6 +1005,8 @@ async function loadDeviceVariables(){
       }
     }
     dvList = list;
+    const pvDv = dvMap ? list.find(v => v.code === dvMap[0]) : null;
+    if (pvDv && pvDv.cls !== pvClass){ pvClass = pvDv.cls; applyKind(); renderSensor(); renderDevice2(); }
     renderDvList();
     await readDvValues(true);
     $('dvHint').textContent = `${list.length} device variable${list.length === 1 ? '' : 's'}. Names come from the manufacturer's DD, so variables are shown by number and type.`;
@@ -1063,11 +1142,15 @@ function renderSensor(){
   const has = !!p?.sensor;
   $('snNone').classList.toggle('hidden', has);
   $('snBody').classList.toggle('hidden', !has);
+  const { kind } = measKind();
+  $('snTitle').textContent = kind === 'temperature' || has ? 'Temperature sensor setup' : 'Sensor setup';
   if (!has){
-    const names = P.PROFILES.filter(x => x.sensor).map(x => x.model).join(', ');
-    $('snNone').textContent = `This device has no sensor setup profile. Profiles exist for: ${names}.`;
+    // Only temperature inputs have a sensor type and wiring to set; hide the card for anything else.
+    if (kind && kind !== 'temperature' && kind !== 'electrical'){ card.classList.add('hidden'); return; }
+    $('snNone').textContent = 'There is no sensor setup profile for this device. Sensor type and wiring are set with manufacturer-specific commands, so a profile needs the manufacturer\'s Field Device Specification or a capture.';
     return;
   }
+  $('snNoTpl').textContent = `The byte layout for this command isn't set yet, so writing is locked. Record ${P.hostTool(dev.mfrId)} changing the sensor type and open the capture in the Capture tab, or enter the layout from the Field Device Specification under "Enter layout by hand".`;
   $('snModel').textContent = `${p.model}, device revision ${dev.devRev}`;
   // Sensor type options
   const sel = $('snType'), cur = sel.value;
@@ -1158,7 +1241,7 @@ function previewSensor(){
     const data = buildSensorWrite(), n = prof.profile.sensor.write;
     $('snBytes').textContent = `Command ${n}, data: ${hex(data)}\nFrame: ${hex(frame(0x82, dev.longAddr, n, data))}`;
     $('snBytes').classList.remove('hidden');
-    snMsg('Dry run: nothing was sent. Compare these bytes with the capture of AMS making the same change.', '');
+    snMsg(`Dry run: nothing was sent. Compare these bytes with a capture of ${P.hostTool(dev.mfrId)} making the same change.`, '');
   } catch(e){ snMsg(e.message, 'bad'); }
 }
 

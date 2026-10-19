@@ -30,6 +30,7 @@ Cloudflare Pages, build output directory `public`. `wrangler.jsonc` is only used
 - Device: `identify()`, `loadDetails()`, `scan()` (poll addresses 0–15), `liveLoop()`.
 - Writes: `runWrite()` handles confirmation and the change history. `raw: true` returns the reply even for error response codes (used by the console).
 - `SimTransport` drives the simulator in `sim.js`. `record()` keeps every byte sent and received for the Capture tab.
+- Measurement type: `measKind()` (profile kind, then PV device variable class, then PV unit code), `kindText()` for trim and ranging wording, `applyKind()`, `fillUnitSelect()`. Keep wording device-neutral unless the device tells us otherwise; name a maker's software only through `HARTProfiles.hostTool(manufacturerId)`.
 - Profiles and tools: `renderProfile()`, sensor setup (`readSensor`, `buildSensorWrite`, `writeSensor`), console (`sendConsole`). `window.HARTApp` is the bridge used by `capture.js`.
 
 ## Other files in `public/`

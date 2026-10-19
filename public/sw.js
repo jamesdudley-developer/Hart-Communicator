@@ -1,6 +1,6 @@
 /* HART Communicator service worker: offline app shell with user-confirmed updates.
    Bump VERSION whenever any app file changes so installed copies pick up the update. */
-const VERSION = 'hart-4.1.0';
+const VERSION = 'hart-4.2.0';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './manifest.webmanifest',
   './usb-serial.js', './hart-core.js', './profiles.js', './sim.js', './capture.js',

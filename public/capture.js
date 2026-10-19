@@ -35,7 +35,7 @@ async function loadFile(slot, file) {
 function explain(e) {
   if (e?.name === 'NotFoundError') return 'No modem selected.';
   if (e?.name === 'SecurityError' || /permission|policy|disallowed/i.test(e?.message || '')) return 'The browser blocked hardware access on this page. Open the app in its own tab.';
-  if (e?.name === 'InvalidStateError' || /already open|claim/i.test(e?.message || '')) return 'That modem is already in use. Select the second modem, not the one AMS or this app is using.';
+  if (e?.name === 'InvalidStateError' || /already open|claim/i.test(e?.message || '')) return 'That modem is already in use. Select the second modem, not the one the configuration software or this app is using.';
   if (e?.name === 'NetworkError') return 'The modem disconnected. Check the USB or OTG cable.';
   return e?.message || String(e);
 }
@@ -200,7 +200,7 @@ function renderTeach() {
   box.classList.remove('hidden');
   const p = teach.m.profile, sc = p.sensor;
   if (teach.none) {
-    $('cpTeachBody').innerHTML = `<p class="hint">This capture is from a ${esc(p.model)} but has no successful Command ${sc.write}. Record AMS changing the sensor type, then open that capture.</p>`;
+    $('cpTeachBody').innerHTML = `<p class="hint">This capture is from a ${esc(p.model)} but has no successful Command ${sc.write}. Record ${esc(P.hostTool(teach.id.manufacturerId ?? -1))} changing the sensor type, then open that capture.</p>`;
     return;
   }
   const opts = (list, sel, none) => (none ? `<option value="">None</option>` : '') + list.map(i => `<option value="${i}"${i === sel ? ' selected' : ''}>Byte ${i} = ${teach.wr[i]}</option>`).join('');
@@ -221,7 +221,7 @@ function renderTeach() {
   const what = () => {
     const ti = $('tcType').value === '' ? null : +$('tcType').value, ci = $('tcConn').value === '' ? null : +$('tcConn').value;
     $('tcWhat').textContent = ti == null ? 'No byte in the write could be a sensor type.' :
-      `AMS wrote ${P.sensorName(p, teach.wr[ti])}${ci != null ? `, ${P.connName(teach.wr[ci])}` : ''}. Check that matches what you set in AMS.`;
+      `The write sets ${P.sensorName(p, teach.wr[ti])}${ci != null ? `, ${P.connName(teach.wr[ci])}` : ''}. Check that matches what you set in ${P.hostTool(teach.id.manufacturerId ?? -1)}.`;
     $('tcSave').disabled = ti == null;
   };
   $('tcType').onchange = $('tcConn').onchange = what; what();
@@ -276,7 +276,7 @@ function render() {
     'Device type': id.expandedDeviceType != null ? '0x' + id.expandedDeviceType.toString(16).toUpperCase() : h2(id.deviceType),
     'Device revision': id.deviceRevision, 'HART revision': id.hartRevision,
     'Software revision': id.softwareRevision, 'Device ID': id.deviceId,
-  }) : '<p class="hint">No Command 0 reply in this capture. Start the capture before AMS connects to the device.</p>';
+  }) : '<p class="hint">No Command 0 reply in this capture. Start the capture before the configuration software connects to the device.</p>';
   const st = s.stats;
   $('cpStats').innerHTML = `${state.aName ? esc(state.aName) + ': ' : ''}${st.transactions} transactions · ${st.writes} writes · ${st.changes} changed reads · ${st.errors} errors${st.badChecksums ? ` · <b>${st.badChecksums} bad checksums</b>` : ''}`;
   const rows = s.tx.filter(passes);
