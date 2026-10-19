@@ -42,6 +42,10 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg><span>Variables</span></button>
   <button class="tab" data-view="configure">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><span>Configure</span></button>
+  <button class="tab" data-view="tools">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5a4 4 0 0 0-5.3 5.1L4 15.8 6.2 18l5.2-5.2a4 4 0 0 0 5.1-5.3l-2.4 2.4-2.1-.5-.5-2.1z"/></svg><span>Tools</span></button>
+  <button class="tab" data-view="capture">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h3l2-4 3 8 2-5 2 3h6"/><circle cx="19" cy="6" r="2"/></svg><span>Capture</span></button>
   <button class="tab" data-view="log">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4z"/><path d="m8 10 2 2-2 2M12 14h4"/></svg><span>Log</span></button>
 </nav>
@@ -58,6 +62,7 @@
           <option value="auto">Automatic</option>
           <option value="usb">WebUSB (Android)</option>
           <option value="serial">Web Serial (Windows)</option>
+          <option value="sim">Simulator (no modem)</option>
         </select>
       </label>
       <label>Poll address
@@ -117,6 +122,11 @@
     <p class="devname" id="devName"></p>
     <p class="devsub" id="devSub"></p>
     <table class="kv" id="devTable"></table>
+  </section>
+  <section class="panel hidden" id="profCard">
+    <h2 id="profTitle">Device profile</h2>
+    <p class="hint" id="profBody"></p>
+    <ul class="flags" id="profFlags" style="margin-top:10px"></ul>
   </section>
   <section class="panel hidden" id="rangeCard">
     <h2>Range and output</h2>
@@ -301,6 +311,130 @@
   </section>
 </section>
 
+
+<!-- ================= TOOLS ================= -->
+<section class="view" data-view="tools">
+  <div class="empty">
+    <p>Connect to a device to use the sensor setup and the command console. Choose <b>Simulator</b> under Connection to practise without a modem.</p>
+    <button data-goto="live">Go to connection</button>
+  </div>
+
+  <section class="panel hidden" id="snCard">
+    <h2>Temperature sensor setup</h2>
+    <p class="hint" id="snNone"></p>
+    <div id="snBody" class="hidden tool">
+      <p class="devsub" id="snModel" style="margin:0"></p>
+      <table class="kv" id="snInfo"></table>
+      <p class="cfgnote warn" id="snNoTpl">The byte layout for this command isn't set yet, so writing is locked. Record AMS changing the sensor type and open the capture in the Capture tab, or enter the layout from the FDS under "Enter layout by hand".</p>
+      <div class="btns"><button id="snReadBtn">Read sensor setup</button></div>
+      <div id="snRead"></div>
+      <div class="row2">
+        <label>Sensor type<select id="snType"></select></label>
+        <label>Wiring<select id="snWire"></select></label>
+      </div>
+      <p class="hint hidden" id="snWireHint">Thermocouples and millivolt inputs don't use the wiring setting, so it's left unchanged.</p>
+      <div class="btns">
+        <button id="snPreview" disabled>Preview bytes (dry run)</button>
+        <button class="primary" id="snWrite" disabled>Write sensor setup</button>
+      </div>
+      <pre class="bytesout hidden" id="snBytes"></pre>
+      <div class="cfgnote hidden" id="snNote"></div>
+      <details>
+        <summary>Enter layout by hand</summary>
+        <div class="body tool">
+          <p class="hint">Use the byte layout from the device's Field Device Specification. Byte numbers count from 0 at the first data byte, after the response code and status.</p>
+          <label>Read request data (hex, blank if none)<input type="text" id="mtRead" placeholder="e.g. 00" autocapitalize="characters" spellcheck="false"></label>
+          <label class="check"><input type="checkbox" id="mtMirror" checked> Write data uses the same layout as the read reply</label>
+          <label>Write data template (hex, only if the layout differs)<input type="text" id="mtWrite" spellcheck="false" autocapitalize="characters"></label>
+          <div class="row2">
+            <label>Sensor type byte (write)<input type="number" id="mtType" min="0" inputmode="numeric"></label>
+            <label>Wiring byte (write, optional)<input type="number" id="mtConn" min="0" inputmode="numeric"></label>
+            <label>Sensor type byte (read reply)<input type="number" id="mtRType" min="0" inputmode="numeric"></label>
+            <label>Wiring byte (read reply)<input type="number" id="mtRConn" min="0" inputmode="numeric"></label>
+          </div>
+          <div class="btns"><button id="mtSave">Save layout</button><button id="snTplClear" class="hidden">Remove saved layout</button></div>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <section class="panel hidden" id="conCard">
+    <h2>Command console</h2>
+    <p class="hint">Send any HART command and see the decoded reply. Reads go straight out. Writes, actions and unknown commands ask you to confirm first.</p>
+    <div class="row2 tool" style="margin-top:12px">
+      <label>Command number<input type="number" id="conCmd" min="0" max="255" list="conList" inputmode="numeric" value="13"></label>
+      <label>Request data (hex)<input type="text" id="conData" placeholder="blank if none" spellcheck="false" autocapitalize="characters"></label>
+    </div>
+    <datalist id="conList"></datalist>
+    <p class="hint" id="conWhat" style="margin-top:8px"></p>
+    <div class="btns" style="margin-top:10px"><button class="primary" id="conSend">Send</button></div>
+    <div class="cfgnote hidden" id="conNote"></div>
+    <div class="hidden conres" id="conResult"></div>
+    <details class="hidden" id="conHistWrap"><summary>Sent this session</summary><pre class="bytesout" id="conHist"></pre></details>
+  </section>
+</section>
+
+<!-- ================= CAPTURE ================= -->
+<section class="view" data-view="capture">
+  <section class="panel">
+    <div class="panel-head"><h2>Listen on the loop</h2><span class="lsstate"><i id="lsDot" data-on="false"></i><span id="lsState">Not connected</span></span></div>
+    <p class="hint">Clip a second modem across the loop with its loop supply and resistor switched off. It only receives, so it records every request from AMS and every reply from the transmitter.</p>
+    <fieldset class="slot"><legend>Record into</legend>
+      <label class="check"><input type="radio" name="slot" value="a" checked> Capture</label>
+      <label class="check"><input type="radio" name="slot" value="b"> Compare with</label>
+    </fieldset>
+    <div class="btns">
+      <button class="primary" id="lsSerial">Listen with Web Serial</button>
+      <button class="primary" id="lsUsb">Listen with USB</button>
+      <button id="lsStart" class="hidden">Start again</button>
+      <button id="lsStop" class="hidden">Stop</button>
+      <button id="lsSave" disabled>Save log</button>
+    </div>
+    <p class="note hidden" id="lsNone">This browser can't open serial or USB devices. Use Edge or Chrome on Windows, or Chrome on Android.</p>
+    <p class="cfgnote warn hidden" id="lsMsg"></p>
+  </section>
+
+  <section class="panel">
+    <h2>Open a capture</h2>
+    <div class="row2 filerow">
+      <label>Capture<input type="file" id="cpFileA"><span class="fname" id="cpAName"></span></label>
+      <label>Compare with (optional)<input type="file" id="cpFileB"><span class="fname" id="cpBName"></span></label>
+    </div>
+    <div class="btns" style="margin-top:10px">
+      <button id="cpSession">Analyse this app's traffic</button>
+      <button id="cpDemo">Open demo capture</button>
+    </div>
+    <details style="margin-top:6px">
+      <summary>How to record a capture of AMS</summary>
+      <ol class="hint" style="padding-left:20px">
+        <li>Start a serial port monitor on the modem's COM port, or listen with a second modem above.</li>
+        <li>Connect to the device in AMS Device Configurator.</li>
+        <li>Change one setting, such as the sensor type, and send it.</li>
+        <li>Stop the monitor and export the log as text or binary, then open it here.</li>
+      </ol>
+      <p class="hint">Text exports from HHD Serial Port Monitor, Device Monitoring Studio, Electronic Team Serial Port Monitor, Portmon, CSV hex and plain hex all work, as do raw binary captures.</p>
+    </details>
+  </section>
+
+  <section id="cpResult" class="hidden capture">
+    <section class="panel"><h2>Device in the capture</h2><div id="cpIdentity"></div><p class="hint" id="cpStats"></p></section>
+    <section class="panel hidden" id="cpTeach">
+      <h2>Learn the sensor setup layout</h2>
+      <div id="cpTeachBody"></div>
+    </section>
+    <section class="panel hidden" id="cpCompare"><h2>Changed between captures</h2><div id="cpCompareBody"></div></section>
+    <section class="panel">
+      <div class="seg" role="group" aria-label="Filter transactions">
+        <button data-f="interesting">Of interest</button><button data-f="writes">Writes</button><button data-f="device">Device-specific</button><button data-f="changed">Changed</button><button data-f="errors">Errors</button><button data-f="all">All</button>
+      </div>
+      <ul id="cpList" class="txlist"></ul>
+      <div class="legend"><span><i class="lg-req"></i>Delimiter and command</span><span><i class="lg-rsp"></i>Response code and status</span><span><i class="lg-data"></i>Data</span><span><i class="lg-chg"></i>Changed since last read</span></div>
+      <div class="btns" style="margin-top:12px"><button id="cpReport">Copy report</button><button id="cpDraft">Copy profile draft</button></div>
+      <div id="cpOutWrap" class="hidden"><p class="hint" id="cpOutMsg"></p><textarea id="cpOut" readonly rows="10"></textarea></div>
+    </section>
+  </section>
+</section>
+
 <!-- ================= LOG ================= -->
 <section class="view" data-view="log">
   <section class="panel">
@@ -333,7 +467,7 @@
       </select>
     </label>
     <div class="btns" style="margin-top:12px"><button class="hidden" id="btnInstall2">Install app</button></div>
-    <p class="note">This app talks to field devices using standard HART universal and common-practice commands. It is not a registered HART host and does not use device descriptions (DDs). For SIL-rated devices, verify configuration with the manufacturer's approved tools.</p>
+    <p class="note">This app talks to field devices using standard HART universal and common-practice commands. It is not a registered HART host and does not use device descriptions (DDs). Device-specific functions come from profiles built from manufacturer Field Device Specifications and captures. For SIL-rated devices, verify configuration with the manufacturer's approved tools.</p>
   </section>
 </section>
 
@@ -349,6 +483,10 @@
     </div>
   </dialog>
 
+<script src="hart-core.js"></script>
+<script src="profiles.js"></script>
+<script src="sim.js"></script>
 <script src="app.js"></script>
+<script src="capture.js"></script>
 </body>
 </html>

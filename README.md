@@ -14,6 +14,11 @@ A browser-based HART communicator for field instruments. It runs in Chrome or Ed
 - Confirmation before every write, with a safety check for anything that moves the output
 - Change history you can share for calibration records
 - Works offline once installed
+- Temperature sensor setup for Rosemount 644, 3144P and 648, using layouts learned from captures or entered from the FDS
+- Command console for any HART command, with decoded replies
+- Capture decoder: open serial-monitor logs, listen on the loop with a second modem, compare before and after
+- Device profiles from manufacturer Field Device Specifications
+- Built-in simulator for practising without a modem
 
 ## Supported browsers
 
@@ -25,3 +30,7 @@ A browser-based HART communicator for field instruments. It runs in Chrome or Ed
 iPhone and iPad are not supported because Safari has no USB or serial access.
 
 
+
+## How device-specific functions work
+
+HART device descriptions (DDs) can't run in a browser, so device-specific functions come from profiles in `public/profiles.js`, built from the manufacturer's Field Device Specification. Byte layouts for device-specific commands are never guessed. They are either learned from a capture of AMS making the change (Capture tab) or entered from the FDS by hand (Tools tab), and stored on the phone or PC for that device type and revision.
