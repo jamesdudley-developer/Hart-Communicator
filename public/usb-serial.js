@@ -295,10 +295,37 @@ class Port {
 
 async function requestDevice() { return navigator.usb.requestDevice({ filters: usbFilters() }); }
 
-async function openDevice(device, opts = {}) {
+async function openOne(device, opts) {
+  // A handle this page still holds (for example after a dropped connection) blocks a fresh open.
+  if (device.opened) { try { await device.close(); } catch {} }
   const p = new Port(device, opts.log);
   try { return await p.open(opts); }
   catch (e) { await p.close(); throw e; }
+}
+
+// Android can list the same modem twice in the picker (an old entry left over from an earlier
+// connection, plus the live one), and the old entry won't open. If the chosen entry fails, try
+// the other entries this site already has permission for with the same vendor and product ID.
+async function openDevice(device, opts = {}) {
+  const log = opts.log || (() => {});
+  try { return await openOne(device, opts); }
+  catch (first) {
+    let others = [];
+    try {
+      others = (await navigator.usb.getDevices()).filter(o => o !== device
+        && o.vendorId === device.vendorId && o.productId === device.productId);
+    } catch {}
+    if (!others.length) throw first;
+    log(`USB open failed on the chosen entry (${first.message}); trying the other ${others.length === 1 ? 'entry' : others.length + ' entries'} for this modem`);
+    for (const o of others) {
+      try {
+        const port = await openOne(o, opts);
+        log('USB opened using the other picker entry for this modem');
+        return port;
+      } catch (e) { log(`USB other entry failed: ${e.message}`); }
+    }
+    throw first;
+  }
 }
 
 window.USBSerial = {
