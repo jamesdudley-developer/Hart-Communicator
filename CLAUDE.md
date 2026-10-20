@@ -14,7 +14,7 @@ James is an instrumentation technician, not a software developer. He edits throu
 
 Plain HTML, CSS and JavaScript in `public/`. No framework, no build step, no npm, no external libraries.
 
-- **Bump `VERSION` in `public/sw.js` whenever any file in `public/` changes**, and add a matching entry to `CHANGELOG.md`. Installed copies only update when the version changes; users get an "Update" toast.
+- **Bump `VERSION` in `public/sw.js` whenever any file in `public/` changes**, set `APP_VERSION` in `public/app.js` to the same number, and add a matching entry to `CHANGELOG.md`. The app registers `sw.js?v=APP_VERSION`, so a stale cached `sw.js` can't hide an update. Installed copies only update when the version changes; users get an "Update" toast.
 - **Keep everything same-origin.** `public/_headers` sets a strict Content-Security-Policy (`script-src 'self'`, `connect-src 'self'`). No CDN scripts, no inline `<script>` blocks, no external API calls, or the app breaks.
 - Any new file the app needs must be added to `ASSETS` in `public/sw.js` so it works offline.
 
