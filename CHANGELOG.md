@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.3.0
+
+- **Capture tab: Clear captures button.** Discards the loaded capture, the comparison and any listen recording so you can start fresh. It needs a second tap within 3 seconds, and is unavailable while listening.
+- **Rosemount 3051 device revision 7 decoded.** Captures from this revision now name and decode its device-specific reads: Command 142 alarm and saturation levels (mA), Commands 148, 160 and 162 model numbers 1 to 3, and Command 128 materials of construction (partly mapped). Command 139 is labelled but not yet confirmed. Decoded from a capture of AMS reading LT-405AA and checked against the AMS screens; it isn't in the FDS on hand, so the Device tab still flags revision 7 as undocumented.
+- Decoded rows are tagged **Decoded**, **Partly decoded** or **Unconfirmed**, and **Copy report** now includes the decoded values under each device-specific command.
+
 ## 4.2.1
 
 - **Fix: two "CP2102 USB to UART Bridge Controller" entries in the Android USB picker, and the top one wouldn't connect.** If the chosen entry fails to open, the app now tries the other entry for the same modem automatically and logs which one worked. Applies to Connect and to listen mode.

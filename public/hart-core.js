@@ -552,6 +552,7 @@ function analyze(chunks, { profile = null } = {}) {
     t.name = info.name;
     t.layer = info.layer;
     t.rw = info.rw;
+    t.confidence = info.def?.confidence || null;
     const reqData = t.req?.data || new Uint8Array();
     const rspData = t.rsp?.data || null;
     t.reqHex = toHex(reqData);
@@ -689,6 +690,8 @@ function textReport(session, compare = null, label = '') {
     if (t.reqHex) L.push(`  req: ${t.reqHex}`);
     if (t.rsp) L.push(`  rsp: rc=${t.rc} st=${hex2(t.rsp.deviceStatus)} ${t.rspHex}`);
     if (t.prevHex) L.push(`  was: ${t.prevHex}`);
+    if (t.decodedRsp && (t.layer === 'device' || t.layer === 'expanded'))
+      for (const [k, v] of Object.entries(t.decodedRsp)) if (v != null) L.push(`  = ${k}: ${typeof v === 'number' && !Number.isInteger(v) ? +v.toPrecision(7) : v}`);
   }
   if (compare?.length) {
     L.push('', 'Before/after differences:');

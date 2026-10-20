@@ -16,7 +16,9 @@ const state = { a: null, b: null, aName: '', bName: '', aChunks: null, filter: '
 function analyzeWithProfile(chunks) {
   const first = H.analyze(chunks), id = first.identity;
   const m = id ? P.match({ manufacturerId: id.manufacturerId ?? -1, deviceType: id.expandedDeviceType ?? id.deviceType, deviceRevision: id.deviceRevision }) : null;
-  return m && Object.keys(m.profile.commands).length ? H.analyze(chunks, { profile: m.profile }) : first;
+  if (!m) return first;
+  const commands = P.commandsFor(m.profile, id.deviceRevision);
+  return Object.keys(commands).length ? H.analyze(chunks, { profile: { ...m.profile, commands } }) : first;
 }
 
 function loadChunks(slot, chunks, name) {
@@ -100,6 +102,31 @@ function saveListen() {
   download(`hart-capture-${live.rec.started.toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt`, live.rec.toText(state[live.slot + 'Name']));
 }
 
+/* ---------- Clear ---------- */
+// Discards both captures and the listen recording. Needs a second tap within 3 s.
+let clearArmed = null;
+function disarmClear() {
+  clearTimeout(clearArmed); clearArmed = null;
+  $('cpClear').textContent = 'Clear captures';
+  $('cpClear').classList.remove('danger');
+}
+function clearCaptures() {
+  if (live.running) return;
+  if (!clearArmed) {
+    $('cpClear').textContent = 'Tap again to discard';
+    $('cpClear').classList.add('danger');
+    clearArmed = setTimeout(disarmClear, 3000);
+    return;
+  }
+  disarmClear();
+  Object.assign(state, { a: null, b: null, aName: '', bName: '', aChunks: null, compare: null });
+  state.open.clear();
+  live.rec = null; live.msg = '';
+  $('cpFileA').value = ''; $('cpFileB').value = '';
+  $('cpOutWrap').classList.add('hidden'); $('cpOut').value = '';
+  render();
+}
+
 /* ---------- Transaction list ---------- */
 function roles(f) {
   const raw = f.raw, addrLen = raw[0] & 0x80 ? 5 : 1, exp = (raw[0] >> 5) & 3, cmdIdx = 1 + addrLen + exp;
@@ -130,6 +157,7 @@ function kv(obj) {
 function txRow(t) {
   const tags = [];
   if (t.layer === 'device' || t.layer === 'expanded') tags.push('<span class="tag dev">Device-specific</span>');
+  if (t.confidence) tags.push(`<span class="tag ${t.confidence === 'confirmed' ? 'ok' : 'guess'}">${{ confirmed: 'Decoded', partial: 'Partly decoded', guess: 'Unconfirmed' }[t.confidence]}</span>`);
   if (t.isWrite) tags.push(`<span class="tag wr">${t.writeCertainty === 'known' ? 'Write' : 'Likely write'}</span>`);
   if (t.causedConfigChange) tags.push('<span class="tag cfg">Set config-changed</span>');
   if (t.changedIdx) tags.push('<span class="tag chg">Value changed</span>');
@@ -252,6 +280,8 @@ function renderLive() {
   $('lsStart').classList.toggle('hidden', live.running || !live.listener);
   $('lsStop').classList.toggle('hidden', !live.running);
   $('lsSave').disabled = !live.rec?.chunks.length || live.running;
+  $('cpClear').disabled = live.running || !(state.a || state.b || live.rec);
+  if ($('cpClear').disabled && clearArmed) disarmClear();
   document.querySelectorAll('input[name=slot]').forEach(r => { r.disabled = live.running; r.checked = r.value === live.slot; });
   const r = live.rec, ses = live.slot === 'b' ? state.b : state.a;
   $('lsState').textContent = live.running
@@ -317,6 +347,7 @@ $('lsSerial').addEventListener('click', () => connectListen('serial'));
 $('lsUsb').addEventListener('click', () => connectListen('usb'));
 $('lsStop').addEventListener('click', stopListen);
 $('lsSave').addEventListener('click', saveListen);
+$('cpClear').addEventListener('click', clearCaptures);
 document.querySelectorAll('input[name=slot]').forEach(r => r.addEventListener('change', () => { live.slot = r.value; renderLive(); }));
 render();
 })();
