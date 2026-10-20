@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.2.1
+
+- **Fix: two "CP2102 USB to UART Bridge Controller" entries in the Android USB picker, and the top one wouldn't connect.** If the chosen entry fails to open, the app now tries the other entry for the same modem automatically and logs which one worked. Applies to Connect and to listen mode.
+- The modem is released when the page is closed or reloaded, so stale picker entries shouldn't build up.
+- Unplugging a different USB device no longer drops the modem connection.
+
 ## 4.2.0
 
 - **Wording follows the connected device.** The app works out what the device measures from the device profile, the PV's device variable class (Command 54) or the PV units (Command 15), and shows it on the Device tab as "Measurement".

@@ -129,7 +129,7 @@ class UsbSerialTransport {
     const d = await window.USBSerial.requestDevice();
     const chip = $('usbChip').value || 'auto';
     this.port = await window.USBSerial.openDevice(d, { chip, log: m => log(m) });
-    this.dev = d;
+    this.dev = this.port.dev;
     this.label = `WebUSB (${this.port.name})`;
     this.running = true; this.readLoop();
   }
@@ -1415,7 +1415,9 @@ $('btnShare').onclick = async () => {
   catch(e){ if (e.name !== 'AbortError'){ $('btnShare').textContent = 'Share blocked'; setTimeout(() => $('btnShare').textContent = 'Share log', 2500); } }
 };
 if (!navigator.share) $('btnShare').classList.add('hidden');
-if ('usb' in navigator) navigator.usb.addEventListener('disconnect', () => { if (transport instanceof UsbSerialTransport) lostConnection(); });
+if ('usb' in navigator) navigator.usb.addEventListener('disconnect', e => { if (transport instanceof UsbSerialTransport && (!e.device || e.device === transport.dev)) lostConnection(); });
+// Release the modem when the page closes, so Android doesn't keep a stale entry for it in the USB picker.
+window.addEventListener('pagehide', () => { try { transport?.close(); } catch(e){} });
 if ('serial' in navigator) navigator.serial.addEventListener('disconnect', () => { if (transport instanceof SerialTransport) lostConnection(); });
 
 log(`Started: ${navigator.userAgent}`);
