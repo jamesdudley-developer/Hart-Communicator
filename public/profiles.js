@@ -27,6 +27,60 @@ const SENSOR_TYPES = [
 const SENSOR_3144P_EXTRA = [[9, 'Special RTD / Ohms', 'rtd'], [142, 'Special TC / mV', 'tc']];
 const CONNECTIONS = [[2, '2-wire'], [3, '3-wire'], [4, '4-wire']];
 
+/* 3051 device revision 7 (HART 5): device-specific reads decoded from a passive capture of
+   AMS Device Configurator opening Device Information on LT-405AA (3051C, final assembly 2169430),
+   20 Oct 2026, checked field by field against the AMS screens. Not from an FDS.
+   confidence: 'confirmed' = every value matched AMS; 'partial' = some bytes mapped; 'guess' = unmapped. */
+const HCF_SPECIAL = { 250: 'Not used', 251: 'None', 252: 'Unknown', 253: 'Special' }; // HART common tables
+const MATERIAL = { 2: '316 SST', 10: 'PTFE', ...HCF_SPECIAL };
+const FILL_FLUID = { 1: 'Silicone oil', ...HCF_SPECIAL };
+const SEAL_TYPE = { 3: 'EFW', ...HCF_SPECIAL };
+const SEAL_COUNT = { 1: 'One seal', 2: 'Two seals', ...HCF_SPECIAL };
+const PROC_CONN = { 14: 'Remote seal', ...HCF_SPECIAL };
+
+function rmt3051r7() {
+  const H = window.HART;
+  const code = (table, v) => v == null ? null : (v in table ? `${table[v]} (${v})` : `code ${v}`);
+  const unsure = v => v == null ? null : `${v} ?`;
+  const model = n => d => ({ [`Model number ${n}`]: H.packedAscii(d, 0, 24) || '(blank)' });
+  return {
+    128: {
+      name: 'Read materials of construction', rw: 'r', confidence: 'partial',
+      rsp: d => ({
+        '[0] Process connection': unsure(code(PROC_CONN, d[0])),
+        '[1] Process connection material': code(MATERIAL, d[1]),
+        '[2] O-ring material': code(MATERIAL, d[2]),
+        '[3] Not yet identified': d[3],
+        '[4] Drain/vent material': code(MATERIAL, d[4]),
+        '[5] Remote seal type': unsure(code(SEAL_TYPE, d[5])),
+        '[6] Remote seal fill fluid': code(FILL_FLUID, d[6]),
+        '[7] Remote seal diaphragm': code(MATERIAL, d[7]),
+        '[8] Number of remote seals': unsure(code(SEAL_COUNT, d[8])),
+        '[9] Sensor fill fluid': unsure(code(FILL_FLUID, d[9])),
+        '[10] Isolator material': code(MATERIAL, d[10]),
+        '[11-13] Configuration, range, type': d.length >= 14 ? `${H.toHex(d.slice(11, 14))} ? (sensor range 3 matched byte 12)` : null,
+        '[14-16] Possibly sensor module serial': d.length >= 17 ? `${H.u(d, 14, 3)} ?` : null,
+        '[17-24] Not yet identified': d.length > 17 ? H.toHex(d.slice(17)) : null,
+      }),
+    },
+    139: {
+      name: 'Read local buttons or security (unconfirmed)', rw: 'r', confidence: 'guess',
+      req: d => ({ index: d[0] }),
+      rsp: d => ({ raw: H.toHex(d), note: 'Probably the local zero/span buttons (0 = enabled). Toggle them in AMS on a bench unit and capture again to confirm.' }),
+    },
+    142: {
+      name: 'Read alarm and saturation levels', rw: 'r', confidence: 'confirmed',
+      rsp: d => ({ 'High alarm (mA)': H.f32(d, 0), 'Low alarm (mA)': H.f32(d, 4), 'High saturation (mA)': H.f32(d, 8), 'Low saturation (mA)': H.f32(d, 12), '[16] Not yet identified': d[16] ?? null }),
+    },
+    148: { name: 'Read model number 1', rw: 'r', confidence: 'confirmed', rsp: model(1) },
+    160: { name: 'Read model number 2', rw: 'r', confidence: 'confirmed', rsp: model(2) },
+    162: { name: 'Read model number 3', rw: 'r', confidence: 'confirmed', rsp: model(3) },
+  };
+}
+
+// FDS commands plus any decoded from captures for this device revision.
+const commandsFor = (p, devRev) => ({ ...p.commands, ...(p.captured?.[devRev] || {}) });
+
 const sensorCommands = (read, write) => ({
   [read]: { name: 'Read sensor configuration (FDS)', rw: 'r' },
   [write]: { name: 'Write sensor configuration (FDS)', rw: 'w' },
@@ -61,8 +115,13 @@ const PROFILES = [
     id: 'rmt-3051c', model: 'Rosemount 3051C', kind: 'pressure',
     manufacturerId: ROSEMOUNT, typeLow: 0x06, expandedType: 0x2606,
     fds: 'FDS revision 1.1 (Jun 2012): HART 7.2 device revision 10, HART 5 device revision 9.',
-    revisions: { 10: { hart: 7, documented: true }, 9: { hart: 5, documented: true } },
+    revisions: {
+      10: { hart: 7, documented: true }, 9: { hart: 5, documented: true },
+      7: { hart: 5, documented: false, note: 'Device revision 7 is older than the FDS on hand. Its device-specific reads were decoded from a capture of AMS, not from the FDS.' },
+    },
     sensor: null, commands: {},
+    // Per-revision commands decoded from captures, applied only to that device revision.
+    captured: { 7: rmt3051r7() },
   },
   {
     id: 'rmt-2051', model: 'Rosemount 2051', kind: 'pressure', suspect: true,
@@ -118,5 +177,5 @@ function candidates(profile, bytes) {
   return out;
 }
 
-window.HARTProfiles = { PROFILES, SENSOR_TYPES, CONNECTIONS, match, sensorName, connName, templates, candidates, hostTool };
+window.HARTProfiles = { PROFILES, SENSOR_TYPES, CONNECTIONS, match, commandsFor, sensorName, connName, templates, candidates, hostTool };
 })();
