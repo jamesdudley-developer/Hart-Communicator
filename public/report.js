@@ -103,13 +103,16 @@ function render(r){
   /* ---------- 3 Model code and options ---------- */
   const mc = r.modelCode || {};
   let mcBody;
-  if (mc.model || mc.extended){
+  if (mc.model || mc.materials){
     mcBody = kv([
-      ['Model number', mono(mc.model)],
-      ['Extended model code', mc.extended ? mono(mc.extended) : undefined],
-      ...(mc.options || []).map(o => [o.label, o.value]),
-      ['Source', mc.source || undefined]
+      [mc.firstLabel || 'Model number', mc.model ? mono(mc.model) : 'Not read'],
+      ...(mc.lines || []).map(([l, v]) => [l, mono(v)]),
     ]);
+    if (mc.materials?.length){
+      mcBody += `<h3 class="rp-sub">Materials and remote seals</h3>` + kv(mc.materials.map(m =>
+        [m.label, m.unsure ? html(`${esc(m.value)} <span class="rp-unconf">unconfirmed</span>`) : m.value]));
+    }
+    if (mc.source) mcBody += `<p class="rp-foot">Source: ${esc(mc.source)}.${mc.materials?.some(m => m.unsure) ? ' Fields marked unconfirmed are decoded but not yet verified against the manufacturer\'s software.' : ''}</p>`;
   } else {
     mcBody = `<div class="rp-pending">
       <table class="rp-kv">
@@ -133,6 +136,7 @@ function render(r){
     ['Alarm direction', rg.alarmText],
     ['Write protection', rg.wpText],
     ['Loop current mode', rg.loopModeText ?? undefined],
+    ...(rg.alarmLevels || []),
   ]) : '<p class="rp-none">Range data could not be read (Command 15).</p>';
 
   const sensor = sn ? kv([
@@ -183,7 +187,7 @@ function render(r){
   /* ---------- 9 Notes ---------- */
   out += section(9, 'Notes', j.notes ? `<p class="rp-notes">${esc(j.notes).replace(/\n/g, '<br>')}</p>` : '<div class="rp-lines"><span></span><span></span><span></span></div>', 'rp-wide rp-keep');
 
-  out += `<p class="rp-disclaimer">Values were read directly from the device over HART using universal and common-practice commands by HART Communicator ${esc(r.meta.appVersion)}. This app is not a registered HART host and does not use device descriptions. For SIL-rated devices, verify configuration with the manufacturer's approved tools.</p>`;
+  out += `<p class="rp-disclaimer">Values were read directly from the device over HART using universal and common-practice commands${mc.source ? ', plus the device-specific reads listed in section 3,' : ''} by HART Communicator ${esc(r.meta.appVersion)}. This app is not a registered HART host and does not use device descriptions. For SIL-rated devices, verify configuration with the manufacturer's approved tools.</p>`;
 
   return { html: out, number: no };
 }

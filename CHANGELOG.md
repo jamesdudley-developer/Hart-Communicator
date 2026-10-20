@@ -4,7 +4,8 @@
 
 - **Device report.** New "Device report" panel on the Device tab. It reads the device again and opens a printable A4 report: site and location, device identification, range and output, sensor limits and serial number, process values at the time of the report, device status, changes written this session and notes. "Save as PDF" uses the phone's or PC's own print dialog, so nothing leaves the device.
 - Site and purpose are remembered on the phone between reports. Each report gets a number that starts with the instrument tag (for example PT-205_20261019-1839); it also becomes the PDF file name and appears in every page footer.
-- The report reads only universal and common-practice commands (0, 2, 3, 7, 12, 13, 14, 15, 16, 20, 48, 50). The model number, extended model code and remote seal section is laid out but shows "Not yet decoded" until the manufacturer-specific command is mapped from a capture.
+- The report reads universal and common-practice commands (0, 2, 3, 7, 12, 13, 14, 15, 16, 20, 48, 50) on every device.
+- **Model code, materials and remote seals** for the Rosemount 3051 at device revision 7, using the reads decoded from the LT-405AA capture: model numbers 1 to 3 (Commands 148, 160, 162), materials of construction and remote seal details (Command 128, with not-yet-verified fields marked "unconfirmed") and alarm and saturation levels (Command 142, shown under Range and output). Only plain reads marked confirmed or partly decoded are sent, and only when the device type and revision match. Other devices and revisions show "Not yet decoded" in that section until a capture is decoded for them.
 - Reports from the simulator carry a clear "Simulated device" banner.
 
 ## 4.3.1

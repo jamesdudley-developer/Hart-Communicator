@@ -334,6 +334,8 @@ body.rp-open{overflow:hidden}
 
 .rp-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 26px}
 .rp-sec{margin-top:14px;break-inside:avoid}
+.rp-sec.rp-wide{break-inside:auto}
+.rp-kv tr{break-inside:avoid}
 .rp-sec h2{display:flex;align-items:center;gap:8px;font-size:.78rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
   margin:0 0 6px;padding-bottom:5px;border-bottom:1.5px solid var(--r-ink)}
 .rp-num{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:3px;background:var(--r-ink);color:#fff;font-size:.68rem;letter-spacing:0}
@@ -345,6 +347,8 @@ body.rp-open{overflow:hidden}
 .rp-dim{font-weight:400;color:var(--r-muted)}
 .rp-none{color:var(--r-muted);font-size:.84rem;margin:4px 0}
 
+.rp-sub{font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--r-muted);margin:12px 0 2px}
+.rp-unconf{display:inline-block;margin-left:6px;padding:0 6px;border:1px solid var(--r-warn);border-radius:3px;color:var(--r-warn);font-size:.68rem;font-weight:600;letter-spacing:.03em;vertical-align:1px}
 .rp-pending{border:1.5px dashed var(--r-line);border-radius:5px;padding:4px 12px 8px}
 .rp-slot{color:var(--r-muted);font-weight:500 !important;font-style:italic}
 .rp-pending p{margin:6px 0 0;font-size:.76rem;color:var(--r-muted)}

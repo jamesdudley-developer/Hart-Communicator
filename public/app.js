@@ -1451,9 +1451,47 @@ async function collectReport(){
 
   const modelCode = {
     note: prof && !prof.profile.suspect
-      ? `${mfr} holds the full model code in manufacturer-specific commands. These fields fill in automatically once that command is mapped from a capture of ${P.hostTool(info.mfrId)} or the Field Device Specification.`
+      ? `${mfr} holds the full model code in manufacturer-specific commands, which are not mapped for device revision ${info.devRev} yet. Capture ${P.hostTool(info.mfrId)} opening Device Information on this revision to add them.`
       : 'The full model code is held in manufacturer-specific commands, which are not mapped for this device yet.'
   };
+
+  // Device-specific reads decoded for this exact profile and device revision (profiles.js).
+  // Only plain reads that need no request data, and never anything marked as a guess.
+  const defs = prof && !prof.profile.suspect ? P.commandsFor(prof.profile, info.devRev) : {};
+  const safeRead = n => { const c = defs[n]; return c && c.rw === 'r' && !c.req && c.rsp && c.confidence !== 'guess' ? c : null; };
+  const readDecoded = async n => { const c = safeRead(n); if (!c) return null; const d = await tryCmd(+n); if (!d || !d.length) return null; try { return c.rsp(d); } catch(e){ log(`Report: Command ${n} decode failed: ${e.message}`); return null; } };
+  const byName = re => Object.keys(defs).filter(n => re.test(defs[n].name) && safeRead(n)).sort((a, b) => +a - +b);
+  const cmdsUsed = [];
+
+  const models = [];
+  for (const n of byName(/^Read model number \d/)){
+    const v = await readDecoded(n); if (!v) continue;
+    const [label, text] = Object.entries(v)[0];
+    cmdsUsed.push(n);
+    if (text && text !== '(blank)') models.push([label, text.trim()]);
+  }
+  if (models.length){
+    modelCode.model = models[0][1];
+    modelCode.lines = models.slice(1).map(([l, v]) => [l, v]);
+    modelCode.firstLabel = models[0][0];
+  }
+  for (const n of byName(/^Read materials of construction/)){
+    const v = await readDecoded(n); if (!v) continue;
+    cmdsUsed.push(n);
+    modelCode.materials = Object.entries(v)
+      .filter(([k, x]) => x != null && !/not yet identified|possibly|configuration, range/i.test(k))
+      .map(([k, x]) => { const s = String(x), unsure = /\?\s*$/.test(s);
+        return { label: k.replace(/^\[[\d-]+\]\s*/, ''), value: s.replace(/\s*\?\s*$/, ''), unsure }; });
+    modelCode.materialsPartial = defs[n].confidence === 'partial';
+  }
+  let alarms = null;
+  for (const n of byName(/^Read alarm and saturation levels/)){
+    const v = await readDecoded(n); if (!v) continue;
+    cmdsUsed.push(n);
+    alarms = Object.entries(v).filter(([k, x]) => /\(mA\)/.test(k) && typeof x === 'number' && isFinite(x)).map(([k, x]) => [k.replace(' (mA)', ''), `${fmt(x)} mA`]);
+  }
+  if (range && alarms?.length) range.alarmLevels = alarms;
+  if (cmdsUsed.length) modelCode.source = `Commands ${cmdsUsed.join(', ')}, decoded from a capture of ${P.hostTool(info.mfrId)} on device revision ${info.devRev}${prof.revision?.documented ? '' : ' (not in the FDS on hand)'}`;
 
   return {
     meta: { created, appVersion: APP_VER, sim: isSim() },
