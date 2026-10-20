@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.3.1
+
+- **Fix: installed apps not seeing updates.** The app now asks for its update file by version number, so a cached older copy (on the phone or at Cloudflare) can't hide a new release. It also checks for updates whenever the app is brought back on screen, not only when it's first opened.
+
 ## 4.3.0
 
 - **Capture tab: Clear captures button.** Discards the loaded capture, the comparison and any listen recording so you can start fresh. It needs a second tap within 3 seconds, and is unavailable while listening.

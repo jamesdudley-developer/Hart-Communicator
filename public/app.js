@@ -1428,7 +1428,7 @@ log(`serial=${'serial' in navigator} usb=${'usb' in navigator} android=${isAndro
 /* ================= App shell: navigation, install, theme, offline ================= */
 (() => {
 'use strict';
-const APP_VERSION = '4.1.0';
+const APP_VERSION = '4.3.1'; // must match VERSION in sw.js
 const $ = id => document.getElementById(id);
 
 // Navigation
@@ -1481,10 +1481,12 @@ window.addEventListener('appinstalled', () => {
 });
 
 // Offline support and updates
+// Registering sw.js?v=<APP_VERSION> means a cached copy of an older sw.js
+// (on the phone or at Cloudflare) can never hide an update.
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')){
   let refreshing = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (!refreshing){ refreshing = true; location.reload(); } });
-  navigator.serviceWorker.register('sw.js').then(reg => {
+  navigator.serviceWorker.register(`sw.js?v=${APP_VERSION}`, { updateViaCache: 'none' }).then(reg => {
     const offer = w => {
       $('updateToast').classList.remove('hidden');
       $('btnUpdate').onclick = () => w.postMessage('SKIP_WAITING');
@@ -1495,6 +1497,8 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
       w && w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) offer(w); });
     });
     setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000);
+    // An installed app brought back from recent apps doesn't reload, so check when it's shown again.
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
   }).catch(err => console.warn('Service worker registration failed', err));
 }
 })();
