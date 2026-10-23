@@ -27,46 +27,45 @@ const SENSOR_TYPES = [
 const SENSOR_3144P_EXTRA = [[9, 'Special RTD / Ohms', 'rtd'], [142, 'Special TC / mV', 'tc']];
 const CONNECTIONS = [[2, '2-wire'], [3, '3-wire'], [4, '4-wire']];
 
-/* 3051 device revision 7 (HART 5): device-specific reads decoded from a passive capture of
-   AMS Device Configurator opening Device Information on LT-405AA (3051C, final assembly 2169430),
-   20 Oct 2026, checked field by field against the AMS screens. Not from an FDS.
+/* Rosemount pressure transmitters, device-specific reads decoded from passive captures of AMS
+   Device Configurator opening Device Information, checked field by field against the AMS screens.
+   Not from an FDS.
+   - 3051C device revision 7 (HART 5): LT-405AA, final assembly 2169430, captured 20 Oct 2026.
+   - 2088 device revision 9 (HART 5): PI-5102, model 2088G1S22A2S1B4I7Q4, captured 23 Oct 2026.
+   Commands 128, 142, 148, 160 and 162 have the same layout on both.
    confidence: 'confirmed' = every value matched AMS; 'partial' = some bytes mapped; 'guess' = unmapped. */
 const HCF_SPECIAL = { 250: 'Not used', 251: 'None', 252: 'Unknown', 253: 'Special' }; // HART common tables
 const MATERIAL = { 2: '316 SST', 10: 'PTFE', ...HCF_SPECIAL };
 const FILL_FLUID = { 1: 'Silicone oil', ...HCF_SPECIAL };
-const SEAL_TYPE = { 3: 'EFW', ...HCF_SPECIAL };
+const SEAL_TYPE = { 3: 'EFW', 6: 'RTW', ...HCF_SPECIAL };
 const SEAL_COUNT = { 1: 'One seal', 2: 'Two seals', ...HCF_SPECIAL };
-const PROC_CONN = { 14: 'Remote seal', ...HCF_SPECIAL };
+const PROC_CONN = { 14: 'Remote seal', 44: '1/2 in NPTF', ...HCF_SPECIAL };
+const PROC_CONN_CONFIRMED = new Set([44]); // matched AMS on PI-5102; 14 seen once only
 
-function rmt3051r7() {
+function rmtPressureCaptured({ with139 = false } = {}) {
   const H = window.HART;
   const code = (table, v) => v == null ? null : (v in table ? `${table[v]} (${v})` : `code ${v}`);
   const unsure = v => v == null ? null : `${v} ?`;
   const model = n => d => ({ [`Model number ${n}`]: H.packedAscii(d, 0, 24) || '(blank)' });
-  return {
+  const cmds = {
     128: {
       name: 'Read materials of construction', rw: 'r', confidence: 'partial',
       rsp: d => ({
-        '[0] Process connection': unsure(code(PROC_CONN, d[0])),
+        '[0] Process connection': PROC_CONN_CONFIRMED.has(d[0]) ? code(PROC_CONN, d[0]) : unsure(code(PROC_CONN, d[0])),
         '[1] Process connection material': code(MATERIAL, d[1]),
         '[2] O-ring material': code(MATERIAL, d[2]),
         '[3] Not yet identified': d[3],
         '[4] Drain/vent material': code(MATERIAL, d[4]),
-        '[5] Remote seal type': unsure(code(SEAL_TYPE, d[5])),
+        '[5] Remote seal type': code(SEAL_TYPE, d[5]),
         '[6] Remote seal fill fluid': code(FILL_FLUID, d[6]),
         '[7] Remote seal diaphragm': code(MATERIAL, d[7]),
         '[8] Number of remote seals': unsure(code(SEAL_COUNT, d[8])),
         '[9] Sensor fill fluid': unsure(code(FILL_FLUID, d[9])),
         '[10] Isolator material': code(MATERIAL, d[10]),
-        '[11-13] Configuration, range, type': d.length >= 14 ? `${H.toHex(d.slice(11, 14))} ? (sensor range 3 matched byte 12)` : null,
-        '[14-16] Possibly sensor module serial': d.length >= 17 ? `${H.u(d, 14, 3)} ?` : null,
-        '[17-24] Not yet identified': d.length > 17 ? H.toHex(d.slice(17)) : null,
+        '[12] Sensor range': d[12] == null ? null : `Range ${d[12]}`,
+        '[11, 13] Not yet identified (sensor type and configuration)': d.length >= 14 ? `${H.toHex([d[11], d[13]])}` : null,
+        '[14-24] Not yet identified': d.length > 14 ? H.toHex(d.slice(14)) : null,
       }),
-    },
-    139: {
-      name: 'Read local buttons or security (unconfirmed)', rw: 'r', confidence: 'guess',
-      req: d => ({ index: d[0] }),
-      rsp: d => ({ raw: H.toHex(d), note: 'Probably the local zero/span buttons (0 = enabled). Toggle them in AMS on a bench unit and capture again to confirm.' }),
     },
     142: {
       name: 'Read alarm and saturation levels', rw: 'r', confidence: 'confirmed',
@@ -76,10 +75,18 @@ function rmt3051r7() {
     160: { name: 'Read model number 2', rw: 'r', confidence: 'confirmed', rsp: model(2) },
     162: { name: 'Read model number 3', rw: 'r', confidence: 'confirmed', rsp: model(3) },
   };
+  if (with139) cmds[139] = {
+    name: 'Read local buttons or security (unconfirmed)', rw: 'r', confidence: 'guess',
+    req: d => ({ index: d[0] }),
+    rsp: d => ({ raw: H.toHex(d), note: 'Probably the local zero/span buttons (0 = enabled). Toggle them in AMS on a bench unit and capture again to confirm.' }),
+  };
+  return cmds;
 }
 
 // FDS commands plus any decoded from captures for this device revision.
 const commandsFor = (p, devRev) => ({ ...p.commands, ...(p.captured?.[devRev] || {}) });
+// Commands safe to send: FDS commands only when the FDS is genuine, plus capture-verified reads.
+const trustedCommands = (p, devRev) => p.suspect ? { ...(p.captured?.[devRev] || {}) } : commandsFor(p, devRev);
 
 const sensorCommands = (read, write) => ({
   [read]: { name: 'Read sensor configuration (FDS)', rw: 'r' },
@@ -121,7 +128,7 @@ const PROFILES = [
     },
     sensor: null, commands: {},
     // Per-revision commands decoded from captures, applied only to that device revision.
-    captured: { 7: rmt3051r7() },
+    captured: { 7: rmtPressureCaptured({ with139: true }) },
   },
   {
     id: 'rmt-2051', model: 'Rosemount 2051', kind: 'pressure', suspect: true,
@@ -132,8 +139,13 @@ const PROFILES = [
   {
     id: 'rmt-2088', model: 'Rosemount 2088', kind: 'pressure', suspect: true,
     manufacturerId: ROSEMOUNT, typeLow: 0x23,
-    fds: 'The FDS on hand is a copy of the 3051C document with the model name and device type changed. Treat device-specific details as unverified.',
-    revisions: {}, sensor: null, commands: {},
+    fds: 'The FDS on hand is a copy of the 3051C document with the model name and device type changed. Treat device-specific details as unverified, except the reads decoded from a capture for device revision 9.',
+    revisions: { 9: { hart: 5, documented: false, note: 'Device revision 9: model numbers, materials and alarm levels were decoded from a capture of AMS on PI-5102 and checked against the AMS screens. Nothing else device-specific is used.' } },
+    sensor: null, commands: {},
+    // Captured reads are trusted even though the FDS is suspect: they were checked against AMS.
+    captured: { 9: rmtPressureCaptured() },
+    // AMS shows Command 16 (final assembly number) as the transmitter "Serial Number" (PI-5102: 3577792).
+    finalAssemblyIsSerial: true,
   },
 ];
 
@@ -177,5 +189,5 @@ function candidates(profile, bytes) {
   return out;
 }
 
-window.HARTProfiles = { PROFILES, SENSOR_TYPES, CONNECTIONS, match, commandsFor, sensorName, connName, templates, candidates, hostTool };
+window.HARTProfiles = { PROFILES, SENSOR_TYPES, CONNECTIONS, match, commandsFor, trustedCommands, sensorName, connName, templates, candidates, hostTool };
 })();

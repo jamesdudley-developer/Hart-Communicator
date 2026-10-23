@@ -276,6 +276,12 @@ const statusText = s => STATUS_BITS.filter(([b]) => s & b).map(([, t]) => t);
 const unitVal = (d, o) => ({ unit: unitName(d[o]), value: f32(d, o + 1) });
 
 // Identity reply shared by commands 0, 11, and 21.
+// HART Common Tables 6 (alarm selection), 3 (transfer function) and 7 (write protect).
+const ALARM_SEL = { 0: 'High', 1: 'Low', 239: 'Hold last value', 250: 'Not used', 251: 'None' };
+const TRANSFER_FN = { 0: 'Linear', 1: 'Square root', 4: 'Special curve', 250: 'Not used', 251: 'None' };
+const WRITE_PROT = { 0: 'Not protected', 1: 'Write protected', 250: 'Not used', 251: 'None' };
+const enumText = (v, table) => v == null ? null : (v in table ? `${v} (${table[v]})` : `${v}`);
+
 function decodeIdentity(d) {
   if (d.length < 12) return null;
   const hartRev = d[4];
@@ -333,8 +339,9 @@ const COMMANDS = {
   14: { name: 'Read PV transducer information', rw: 'r', rsp: d => ({ serial: u(d, 0, 3), unit: unitName(d[3]), upperLimit: f32(d, 4), lowerLimit: f32(d, 8), minSpan: f32(d, 12) }) },
   15: {
     name: 'Read device information', rw: 'r', rsp: d => ({
-      alarmSelect: d[0], transferFunction: d[1], rangeUnit: unitName(d[2]),
-      URV: f32(d, 3), LRV: f32(d, 7), damping_s: f32(d, 11), writeProtect: d[15],
+      alarmSelect: enumText(d[0], ALARM_SEL), transferFunction: enumText(d[1], TRANSFER_FN), rangeUnit: unitName(d[2]),
+      URV: f32(d, 3), LRV: f32(d, 7), damping_s: f32(d, 11), writeProtect: enumText(d[15], WRITE_PROT),
+      ...(d.length >= 17 ? { distributor: d[16] } : {}),
     }),
   },
   16: { name: 'Read final assembly number', rw: 'r', rsp: d => ({ finalAssembly: u(d, 0, 3) }) },
@@ -692,6 +699,19 @@ function textReport(session, compare = null, label = '') {
     if (t.prevHex) L.push(`  was: ${t.prevHex}`);
     if (t.decodedRsp && (t.layer === 'device' || t.layer === 'expanded'))
       for (const [k, v] of Object.entries(t.decodedRsp)) if (v != null) L.push(`  = ${k}: ${typeof v === 'number' && !Number.isInteger(v) ? +v.toPrecision(7) : v}`);
+  }
+  // Identity, serial numbers and range: the last reply of each, so one pasted report is enough to decode from.
+  const idCmds = [0, 13, 14, 15, 16, 20];
+  const lastOf = n => [...session.tx].reverse().find(t => t.command === n && t.ok);
+  const idTx = idCmds.map(lastOf).filter(Boolean);
+  if (idTx.length) {
+    L.push('', 'Identity and range (last reply of each):');
+    for (const t of idTx) {
+      L.push(`#${t.index} cmd ${t.command} ${t.name}`);
+      L.push(`  rsp: rc=${t.rc} st=${hex2(t.rsp.deviceStatus)} ${t.rspHex}`);
+      if (t.decodedRsp) for (const [k, v] of Object.entries(t.decodedRsp))
+        if (v != null && typeof v !== 'object') L.push(`  = ${k}: ${typeof v === 'number' && !Number.isInteger(v) ? +v.toPrecision(7) : v}`);
+    }
   }
   if (compare?.length) {
     L.push('', 'Before/after differences:');
