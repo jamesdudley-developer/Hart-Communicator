@@ -90,7 +90,7 @@ function render(r){
     ['Manufacturer', d.mfr],
     ['Model (from device type)', d.model || 'Not in the profile library'],
     ['Device type', mono(d.devTypeHex)],
-    ['Device ID', mono(d.devId)],
+    ['Device ID', mono(d.devIdDec ?? d.devId)],
     ['HART revision', d.hartRev],
     ['Device / software / hardware rev.', `${d.devRev} / ${d.swRev} / ${d.hwRev}`],
     [d.fanLabel || 'Final assembly number', d.fan ?? null],
@@ -108,6 +108,17 @@ function render(r){
       [mc.firstLabel || 'Model number', mc.model ? mono(mc.model) : 'Not read'],
       ...(mc.lines || []).map(([l, v]) => [l, mono(v)]),
     ]);
+    // Code-by-code breakdown of each model number, from the manufacturer's ordering tables (modelcode.js).
+    const MC = window.HARTModelCode;
+    const allModels = [[mc.firstLabel || 'Model number', mc.model], ...(mc.lines || [])].filter(([, v]) => v);
+    for (const [label, value] of allModels){
+      const dec = MC && MC.decode(value);
+      if (!dec) continue;
+      const rows = dec.rows.map(r => `<tr><td class="rp-mono">${esc(r.code)}</td><td>${esc(r.label)}</td><td>${r.decoded ? esc(r.meaning) : '<span class="rp-dim">Not decoded</span>'}</td></tr>`).join('');
+      mcBody += `<h3 class="rp-sub">${esc(label)}: ${esc(dec.product)}</h3>
+        <table class="rp-tbl rp-mc"><thead><tr><th>Code</th><th>Position</th><th>Meaning</th></tr></thead><tbody>${rows}</tbody></table>
+        <p class="rp-foot">Source: ${esc(dec.source)}.${dec.rows.some(r => !r.decoded) ? ' "Not decoded" positions are not in the data sheet on hand.' : ''}</p>`;
+    }
     if (mc.materials?.length){
       mcBody += `<h3 class="rp-sub">Materials and remote seals</h3>` + kv(mc.materials.map(m =>
         [m.label, m.unsure ? html(`${esc(m.value)} <span class="rp-unconf">unconfirmed</span>`) : m.value]));

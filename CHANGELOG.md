@@ -1,5 +1,10 @@
 # Changelog
 
+## 4.6.0
+
+- **Model code breakdown in the device report.** Each model number the device holds is now broken down code by code under "Model code and options", using Emerson's ordering tables. Covered so far: the Rosemount 2088 (product data sheet 00813-0100-4690 Rev QC) and the general part of a Rosemount 1199 seal system code (data sheet 00813-0100-4016 Rev HA: seal location, fill fluid, capillary, capillary length and seal type). Positions not in the data sheets on hand show "Not decoded" rather than a guess. Model numbers from other products are listed as before, without a breakdown.
+- **Device ID in decimal** on the Device tab and in the report, matching how AMS shows it (for example 11714156 instead of B2 BE 6C).
+
 ## 4.5.0
 
 - **Rosemount 2088 device revision 9 decoded.** Model numbers 1 to 3 (Commands 148, 160, 162), materials and remote seals (Command 128) and alarm and saturation levels (Command 142) now read on a 2088 at device revision 9, so the device report fills its model code and materials section. Decoded from captures of AMS reading PI-5102 and checked field by field against the AMS screens. The 2088 FDS on hand is still treated as not genuine, so only these capture-checked reads are sent; nothing else device-specific is.

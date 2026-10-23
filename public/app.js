@@ -2,7 +2,7 @@
 (() => {
 'use strict';
 const $ = id => document.getElementById(id);
-const APP_VER = '4.5.0';
+const APP_VER = '4.6.0';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const hex = b => Array.from(b, x => x.toString(16).padStart(2,'0').toUpperCase()).join(' ');
 const hx = (n, w=2) => '0x' + n.toString(16).toUpperCase().padStart(w,'0');
@@ -256,7 +256,7 @@ async function identify(poll){
     mfrId: rev >= 7 && d.length >= 19 ? (d[17] << 8) | d[18] : d[1],
     devType: rev >= 7 ? (d[1] << 8) | d[2] : d[2],
     devRev: d[5], swRev: d[6], hwRev: d[7] >> 3,
-    devId: hex(d.slice(9,12)),
+    devId: hex(d.slice(9,12)), devIdDec: (d[9] << 16) | (d[10] << 8) | d[11],
     minPre: d[3],
     nVars: d.length > 13 ? d[13] : null,
     cfgCount: d.length > 15 ? (d[14] << 8) | d[15] : null,
@@ -322,7 +322,7 @@ function renderDevice(info, det){
   document.body.classList.add('has-device');
   fillTable($('devTable'), [
     ['Tag', det.tag], ['Long tag', det.longTag], ['Descriptor', det.desc], ['Message', det.msg], ['Date', det.date],
-    ['Poll address', info.poll], ['Device ID', info.devId],
+    ['Poll address', info.poll], ['Device ID', info.devIdDec],
     ['Device / software / hardware rev', `${info.devRev} / ${info.swRev} / ${info.hwRev}`],
     [fanLabel(info), det.fan], ['Device variables', info.nVars],
     ['Configuration change counter', info.cfgCount]
@@ -1388,7 +1388,7 @@ async function collectReport(){
   const mfr = MFR[info.mfrId] || `Manufacturer ${hx(info.mfrId)}`;
   const device = {
     mfr, model: prof?.profile.model?.replace(/^Rosemount\s+/, '') || null,
-    devTypeHex: hx(info.devType, info.rev >= 7 ? 4 : 2), devId: info.devId, hartRev: info.rev,
+    devTypeHex: hx(info.devType, info.rev >= 7 ? 4 : 2), devId: info.devId, devIdDec: info.devIdDec, hartRev: info.rev,
     devRev: info.devRev, swRev: info.swRev, hwRev: info.hwRev, fan: det.fan, fanLabel: fanLabel(info), poll: info.poll,
     cfgCount: info.cfgCount, tag: det.tag, longTag: det.longTag, desc: det.desc, msg: det.msg, date: det.date
   };
@@ -1597,7 +1597,7 @@ log(`serial=${'serial' in navigator} usb=${'usb' in navigator} android=${isAndro
 /* ================= App shell: navigation, install, theme, offline ================= */
 (() => {
 'use strict';
-const APP_VERSION = '4.5.0'; // must match VERSION in sw.js
+const APP_VERSION = '4.6.0'; // must match VERSION in sw.js
 const $ = id => document.getElementById(id);
 
 // Navigation

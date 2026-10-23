@@ -359,6 +359,8 @@ body.rp-open{overflow:hidden}
 .rp-tbl .rp-num-c{text-align:right;font-variant-numeric:tabular-nums;padding-right:16px}
 .rp-tbl tr.rp-loop td{background:var(--r-soft)}
 .rp-tbl tr.bad td{color:var(--r-bad)}
+.rp-mc td:first-child{white-space:nowrap;font-weight:600}
+.rp-mc td:nth-child(2){color:var(--r-muted);white-space:nowrap}
 .rp-foot{font-size:.74rem;color:var(--r-muted);margin:6px 0 0}
 
 .rp-flags{list-style:none;margin:0;padding:0;font-size:.84rem}
