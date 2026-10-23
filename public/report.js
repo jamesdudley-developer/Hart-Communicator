@@ -111,13 +111,14 @@ function render(r){
     // Code-by-code breakdown of each model number, from the manufacturer's ordering tables (modelcode.js).
     const MC = window.HARTModelCode;
     const allModels = [[mc.firstLabel || 'Model number', mc.model], ...(mc.lines || [])].filter(([, v]) => v);
-    for (const [label, value] of allModels){
-      const dec = MC && MC.decode(value);
+    const decs = MC ? MC.decodeAll(allModels.map(([, v]) => v)) : [];
+    for (const [i, [label]] of allModels.entries()){
+      const dec = decs[i];
       if (!dec) continue;
       const rows = dec.rows.map(r => `<tr><td class="rp-mono">${esc(r.code)}</td><td>${esc(r.label)}</td><td>${r.decoded ? esc(r.meaning) : '<span class="rp-dim">Not decoded</span>'}</td></tr>`).join('');
       mcBody += `<h3 class="rp-sub">${esc(label)}: ${esc(dec.product)}</h3>
         <table class="rp-tbl rp-mc"><thead><tr><th>Code</th><th>Position</th><th>Meaning</th></tr></thead><tbody>${rows}</tbody></table>
-        <p class="rp-foot">Source: ${esc(dec.source)}.${dec.rows.some(r => !r.decoded) ? ' "Not decoded" positions are not in the data sheet on hand.' : ''}</p>`;
+        <p class="rp-foot">Source: ${esc(dec.source)}.${dec.rows.some(r => !r.decoded) ? ' "Not decoded" codes are not in that data sheet.' : ''} Codes can change between data sheet revisions; check against the nameplate if a meaning looks wrong.</p>`;
     }
     if (mc.materials?.length){
       mcBody += `<h3 class="rp-sub">Materials and remote seals</h3>` + kv(mc.materials.map(m =>

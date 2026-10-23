@@ -2,7 +2,10 @@
 
 ## 4.6.0
 
-- **Model code breakdown in the device report.** Each model number the device holds is now broken down code by code under "Model code and options", using Emerson's ordering tables. Covered so far: the Rosemount 2088 (product data sheet 00813-0100-4690 Rev QC) and the general part of a Rosemount 1199 seal system code (data sheet 00813-0100-4016 Rev HA: seal location, fill fluid, capillary, capillary length and seal type). Positions not in the data sheets on hand show "Not decoded" rather than a guess. Model numbers from other products are listed as before, without a breakdown.
+- **Model code breakdown in the device report.** Each model number the device holds is now broken down code by code under "Model code and options", using Emerson's ordering tables:
+  - Rosemount 2088 transmitters (product data sheet 00813-0100-4690 Rev QC).
+  - Rosemount 1199 seal systems (product data sheet 00813-0100-4016 Rev UD): connection type, fill fluid, capillary and length, and the seal's own code for remote threaded (RTW) and extended flanged (EFW) seals. Other seal styles show their style name, with the rest of the code marked "Not decoded".
+  - Codes not in those data sheets show "Not decoded" rather than a guess. Model numbers from other products are listed as before, without a breakdown.
 - **Device ID in decimal** on the Device tab and in the report, matching how AMS shows it (for example 11714156 instead of B2 BE 6C).
 
 ## 4.5.0
