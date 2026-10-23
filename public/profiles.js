@@ -90,7 +90,14 @@ function rmtPressureCaptured({ with139 = false } = {}) {
 function rmt644r8() {
   const H = window.HART;
   const CAL = { 0: 'Factory trim', 1: 'User trim' };
+  const sensorRsp = d => ({ sensor: d[0] + 1, 'Sensor type': d[1] === 250 ? 'Not used' : sensorName(PROFILES.find(p => p.id === 'rmt-644'), d[1]), Connection: d[2] === 250 ? 'Not used' : connName(d[2]) });
   return {
+    136: { name: 'Read 2-wire lead correction', rw: 'r', confidence: 'confirmed', req: d => ({ sensor: d[0] + 1 }), rsp: d => ({ sensor: d[0] + 1, 'Lead correction (ohms)': H.f32(d, 1), note: 'Only applied to 2-wire RTD and ohm inputs' }) },
+    152: { name: 'Read LCD configuration', rw: 'r', confidence: 'confirmed', rsp: d => ({ 'Display code (byte 1)': d[0], 'Decimal point code': d[1], 'Bar graph code': d[2], 'Display code (byte 2)': d[3], 'Display type': { 0: 'None', 1: 'LOI', 2: 'LCD' }[d[4]] ?? d[4], 'LOI password': d[5] ? 'Enabled' : 'Disabled' }) },
+    174: { name: 'Read Callendar-Van Dusen constants', rw: 'r', confidence: 'confirmed', req: d => ({ sensor: d[0] + 1 }), rsp: d => ({ sensor: d[0] + 1, R0: H.f32(d, 1), A: H.f32(d, 5), B: H.f32(d, 9), C: H.f32(d, 13), note: 'Only used with the special CVD sensor type' }) },
+    196: { name: 'Read sensor drift alert options', rw: 'r', confidence: 'confirmed', req: d => ({ units: d[0] }), rsp: d => ({ units: d[0], 'Drift alert': { 0: 'Warning', 1: 'Alarm', 2: 'Disabled', 250: 'Not used' }[d[1]] ?? d[1], 'Drift limit': H.f32(d, 3), 'Drift damping (s)': H.f32(d, 7) }) },
+    140: { name: 'Read sensor configuration', rw: 'r', confidence: 'confirmed', req: d => ({ sensor: d[0] + 1 }), rsp: sensorRsp },
+    141: { name: 'Write sensor configuration', rw: 'w', confidence: 'confirmed', req: sensorRsp },
     138: { name: 'Read device options', rw: 'r', confidence: 'confirmed', rsp: d => ({ 'Device options (bits)': H.toHex([d[0]]), 'Dual sensor': !!(d[0] & 1), 'Hot Backup': !!(d[0] & 4), 'Drift alert': !!(d[0] & 16), 'DA1 diagnostics': !!(d[0] & 64) }) },
     142: { name: 'Read sensor trim information', rw: 'r', confidence: 'confirmed', req: d => ({ sensor: d[0], units: d[1] }),
       rsp: d => ({ sensor: d[0], units: d[1], 'Calibration mode': CAL[d[2]] ?? d[2], 'Upper trim limit': H.f32(d, 3), 'Lower trim limit': H.f32(d, 7), 'Upper trim value': H.f32(d, 11), 'Lower trim value': H.f32(d, 15) }) },
@@ -130,7 +137,10 @@ const PROFILES = [
     // stored in the device. It shows the Cmd 0 device ID as "Electronics Serial Number".
     // Sensor trim through device-specific commands (FDS rev 8 section 10.13–10.17, matched by an AMS capture
     // on TIT406-2, 23 Oct 2026). The 644 does not use common-practice Commands 80–83.
-    trim: { revs: [8], sensor: 0, units: 146, info: 142, upper: 143, lower: 144, mode: 145 },
+    trim: { revs: [8], sensor: 0, units: 146, info: 142, upper: 143, lower: 144, mode: 145, latched: 178, clearLatched: 179 },
+    // Built-in Cmd 140/141 layout for rev 8 (FDS rev 8, confirmed on TIT406-2 19 and 23 Oct 2026):
+    // read request [sensor]; reply and write data [sensor, sensor type, connection]. Real devices only.
+    sensorLayout: { 8: { readReq: [0], readTypeIdx: 1, readConnIdx: 2, mirror: true, writeBase: [], typeIdx: 1, connIdx: 2, source: 'builtin' } },
     noModelCode: '644', deviceIdLabel: 'Electronics serial number (device ID)',
     captured: { 8: rmt644r8() },
   },
