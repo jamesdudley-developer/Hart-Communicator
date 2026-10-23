@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.7.1
+
+- **Rosemount 644 (device revision 8):** the report now shows the alarm and saturation levels (Command 189: high alarm, low alarm, high saturation, low saturation in mA), decoded from a capture of AMS reading TIT406-2 and checked against its Alarm Type and Security screen.
+- The 644 doesn't store a model code (AMS shows only "644"), so the report says so and points to the Nameplate model codes field instead of suggesting a capture.
+- On a 644 the device ID is labelled "Electronics serial number (device ID)", as AMS shows it.
+
 ## 4.7.0
 
 - **More model code breakdowns** in the device report, each from the manufacturer's own ordering tables:

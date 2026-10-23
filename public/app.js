@@ -2,7 +2,7 @@
 (() => {
 'use strict';
 const $ = id => document.getElementById(id);
-const APP_VER = '4.7.0';
+const APP_VER = '4.7.1';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const hex = b => Array.from(b, x => x.toString(16).padStart(2,'0').toUpperCase()).join(' ');
 const hx = (n, w=2) => '0x' + n.toString(16).toUpperCase().padStart(w,'0');
@@ -322,7 +322,7 @@ function renderDevice(info, det){
   document.body.classList.add('has-device');
   fillTable($('devTable'), [
     ['Tag', det.tag], ['Long tag', det.longTag], ['Descriptor', det.desc], ['Message', det.msg], ['Date', det.date],
-    ['Poll address', info.poll], ['Device ID', info.devIdDec],
+    ['Poll address', info.poll], [devIdLabel(info), info.devIdDec],
     ['Device / software / hardware rev', `${info.devRev} / ${info.swRev} / ${info.hwRev}`],
     [fanLabel(info), det.fan], ['Device variables', info.nVars],
     ['Configuration change counter', info.cfgCount]
@@ -1101,6 +1101,10 @@ let snRead = null;       // last sensor configuration reply data
 
 // Some makers' software shows Command 16 (final assembly number) as the transmitter serial number.
 // Only for profiles where that was checked against the manufacturer's software.
+function devIdLabel(info){
+  const m = P.match({ manufacturerId: info.mfrId, deviceType: info.devType, deviceRevision: info.devRev });
+  return m?.profile.deviceIdLabel || 'Device ID';
+}
 function fanLabel(info){
   const m = P.match({ manufacturerId: info.mfrId, deviceType: info.devType, deviceRevision: info.devRev });
   return m?.profile.finalAssemblyIsSerial ? 'Serial number (final assembly)' : 'Final assembly number';
@@ -1388,7 +1392,7 @@ async function collectReport(){
   const mfr = MFR[info.mfrId] || `Manufacturer ${hx(info.mfrId)}`;
   const device = {
     mfr, model: prof?.profile.model?.replace(/^Rosemount\s+/, '') || null,
-    devTypeHex: hx(info.devType, info.rev >= 7 ? 4 : 2), devId: info.devId, devIdDec: info.devIdDec, hartRev: info.rev,
+    devTypeHex: hx(info.devType, info.rev >= 7 ? 4 : 2), devId: info.devId, devIdDec: info.devIdDec, devIdLabel: devIdLabel(info), hartRev: info.rev,
     devRev: info.devRev, swRev: info.swRev, hwRev: info.hwRev, fan: det.fan, fanLabel: fanLabel(info), poll: info.poll,
     cfgCount: info.cfgCount, tag: det.tag, longTag: det.longTag, desc: det.desc, msg: det.msg, date: det.date
   };
@@ -1457,7 +1461,10 @@ async function collectReport(){
   if (e) EXT_BITS.forEach(([bit, t]) => { if (e & bit) ext.push({ title: t, sub: 'NAMUR NE 107 category', cls: bit & 0x0C ? 'bad' : 'warn' }); });
   const status = { flags, ext, cmd48: det.cmd48 && det.cmd48.some(b => b) ? hex(det.cmd48) : null };
 
-  const modelCode = {
+  const modelCode = prof?.profile.noModelCode ? {
+    notStored: true,
+    note: `This device doesn't store its model code: ${P.hostTool(info.mfrId)} shows only "${prof.profile.noModelCode}".`
+  } : {
     note: prof && (!prof.profile.suspect || prof.profile.captured)
       ? `${mfr} holds the full model code in manufacturer-specific commands, which are not mapped for device revision ${info.devRev} yet. Capture ${P.hostTool(info.mfrId)} opening Device Information on this revision to add them.`
       : 'The full model code is held in manufacturer-specific commands, which are not mapped for this device yet.'
@@ -1597,7 +1604,7 @@ log(`serial=${'serial' in navigator} usb=${'usb' in navigator} android=${isAndro
 /* ================= App shell: navigation, install, theme, offline ================= */
 (() => {
 'use strict';
-const APP_VERSION = '4.7.0'; // must match VERSION in sw.js
+const APP_VERSION = '4.7.1'; // must match VERSION in sw.js
 const $ = id => document.getElementById(id);
 
 // Navigation

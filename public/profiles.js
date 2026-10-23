@@ -83,6 +83,20 @@ function rmtPressureCaptured({ with139 = false } = {}) {
   return cmds;
 }
 
+/* 644 device revision 8 (HART 5): read decoded from a passive capture of AMS opening Device Information on
+   TIT406-2 (23 Oct 2026) and checked against the AMS Alarm Type and Security tab.
+   Cmd 189 = four big-endian floats: high alarm 21.75, low alarm 3.75, high saturation 20.50, low saturation 3.90 mA
+   (Rosemount levels). Same order as the 3051 Cmd 142, without the trailing byte. */
+function rmt644r8() {
+  const H = window.HART;
+  return {
+    189: {
+      name: 'Read alarm and saturation levels', rw: 'r', confidence: 'confirmed',
+      rsp: d => ({ 'High alarm (mA)': H.f32(d, 0), 'Low alarm (mA)': H.f32(d, 4), 'High saturation (mA)': H.f32(d, 8), 'Low saturation (mA)': H.f32(d, 12) }),
+    },
+  };
+}
+
 // FDS commands plus any decoded from captures for this device revision.
 const commandsFor = (p, devRev) => ({ ...p.commands, ...(p.captured?.[devRev] || {}) });
 // Commands safe to send: FDS commands only when the FDS is genuine, plus capture-verified reads.
@@ -101,6 +115,10 @@ const PROFILES = [
     revisions: { 8: { hart: 5, documented: true }, 9: { hart: 7, documented: false, note: 'HART 7 mode (device revision 9) is not covered by the FDS on hand.' } },
     sensor: { read: 140, write: 141, types: SENSOR_TYPES, connections: CONNECTIONS },
     commands: sensorCommands(140, 141),
+    // AMS Device Information on TIT406-2 (rev 8, 23 Oct 2026) shows Model "644" only: no model number is
+    // stored in the device. It shows the Cmd 0 device ID as "Electronics Serial Number".
+    noModelCode: '644', deviceIdLabel: 'Electronics serial number (device ID)',
+    captured: { 8: rmt644r8() },
   },
   {
     id: 'rmt-3144p', model: 'Rosemount 3144P', kind: 'temperature',
