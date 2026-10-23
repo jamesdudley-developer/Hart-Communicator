@@ -93,7 +93,7 @@ function render(r){
     ['Device ID', mono(d.devId)],
     ['HART revision', d.hartRev],
     ['Device / software / hardware rev.', `${d.devRev} / ${d.swRev} / ${d.hwRev}`],
-    ['Final assembly number', d.fan ?? null],
+    [d.fanLabel || 'Final assembly number', d.fan ?? null],
     ['Poll address', d.poll],
     ['Configuration change counter', d.cfgCount ?? undefined],
   ]);

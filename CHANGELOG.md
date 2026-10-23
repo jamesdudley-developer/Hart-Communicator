@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.5.0
+
+- **Rosemount 2088 device revision 9 decoded.** Model numbers 1 to 3 (Commands 148, 160, 162), materials and remote seals (Command 128) and alarm and saturation levels (Command 142) now read on a 2088 at device revision 9, so the device report fills its model code and materials section. Decoded from captures of AMS reading PI-5102 and checked field by field against the AMS screens. The 2088 FDS on hand is still treated as not genuine, so only these capture-checked reads are sent; nothing else device-specific is.
+- **Command 128 map improved** for the 3051 revision 7 too: remote seal type (EFW, RTW) and sensor range are now confirmed, 1/2 in NPTF process connection is recognised, and the earlier "possibly sensor module serial" guess was dropped (it didn't hold on the 2088).
+- **Serial numbers.** On the 2088, AMS shows Command 16 (final assembly number) as the transmitter serial number, so the Device tab and report label it "Serial number (final assembly)". The sensor serial number continues to come from Command 14.
+- **Command console:** alarm direction, transfer function and write protection now show their meaning, for example "0 (High)".
+- **Capture report:** Copy report now always lists the last reply of Commands 0, 13, 14, 15, 16 and 20, so one pasted report has the identity, serial numbers and range.
+- Device tab no longer shows "null" for fields a HART 5 device doesn't report.
+
 ## 4.4.0
 
 - **Device report.** New "Device report" panel on the Device tab. It reads the device again and opens a printable A4 report: site and location, device identification, range and output, sensor limits and serial number, process values at the time of the report, device status, changes written this session and notes. "Save as PDF" uses the phone's or PC's own print dialog, so nothing leaves the device.

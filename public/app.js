@@ -2,7 +2,7 @@
 (() => {
 'use strict';
 const $ = id => document.getElementById(id);
-const APP_VER = '4.4.0';
+const APP_VER = '4.5.0';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const hex = b => Array.from(b, x => x.toString(16).padStart(2,'0').toUpperCase()).join(' ');
 const hx = (n, w=2) => '0x' + n.toString(16).toUpperCase().padStart(w,'0');
@@ -92,7 +92,7 @@ function unpackAscii(bytes){
 const latin1 = b => String.fromCharCode(...b).replace(/\0/g,'').trim();
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function fillTable(el, rows){
-  el.innerHTML = rows.filter(r => r[1] !== undefined && r[1] !== '').map(([k,v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
+  el.innerHTML = rows.filter(r => r[1] != null && r[1] !== '').map(([k,v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
 }
 
 /* ================= Transports ================= */
@@ -324,7 +324,7 @@ function renderDevice(info, det){
     ['Tag', det.tag], ['Long tag', det.longTag], ['Descriptor', det.desc], ['Message', det.msg], ['Date', det.date],
     ['Poll address', info.poll], ['Device ID', info.devId],
     ['Device / software / hardware rev', `${info.devRev} / ${info.swRev} / ${info.hwRev}`],
-    ['Final assembly number', det.fan], ['Device variables', info.nVars],
+    [fanLabel(info), det.fan], ['Device variables', info.nVars],
     ['Configuration change counter', info.cfgCount]
   ]);
   measRow = null;
@@ -1099,6 +1099,13 @@ const P = window.HARTProfiles, H = window.HART;
 let prof = null;         // { profile, revision, documented } for the connected device
 let snRead = null;       // last sensor configuration reply data
 
+// Some makers' software shows Command 16 (final assembly number) as the transmitter serial number.
+// Only for profiles where that was checked against the manufacturer's software.
+function fanLabel(info){
+  const m = P.match({ manufacturerId: info.mfrId, deviceType: info.devType, deviceRevision: info.devRev });
+  return m?.profile.finalAssemblyIsSerial ? 'Serial number (final assembly)' : 'Final assembly number';
+}
+
 const isSim = () => !!transport?.isSim;
 const parseHex = s => {
   const t = String(s || '').replace(/0x/gi, '').replace(/[^0-9a-f]/gi, '');
@@ -1120,7 +1127,8 @@ function renderProfile(info){
     $('profTitle').textContent = p.model;
     $('profBody').textContent = p.fds;
     const flags = [];
-    if (p.suspect) flags.push(['The specification for this model is not genuine. Device-specific data is unverified.', 'bad']);
+    if (p.suspect && p.captured?.[info.devRev]) flags.push([rev?.note || `Device revision ${info.devRev}: reads decoded from a capture and checked against the manufacturer's software. The specification on hand is not genuine, so nothing else device-specific is used.`, 'warn']);
+    else if (p.suspect) flags.push(['The specification for this model is not genuine. Device-specific data is unverified.', 'bad']);
     else if (!rev) flags.push([`Device revision ${info.devRev} is not covered by the specification on hand.`, 'warn']);
     else if (!rev.documented) flags.push([rev.note || `Device revision ${info.devRev} is not documented.`, 'warn']);
     else flags.push([`Device revision ${info.devRev} (HART ${rev.hart}) matches the specification.`, 'ok']);
@@ -1381,7 +1389,7 @@ async function collectReport(){
   const device = {
     mfr, model: prof?.profile.model?.replace(/^Rosemount\s+/, '') || null,
     devTypeHex: hx(info.devType, info.rev >= 7 ? 4 : 2), devId: info.devId, hartRev: info.rev,
-    devRev: info.devRev, swRev: info.swRev, hwRev: info.hwRev, fan: det.fan, poll: info.poll,
+    devRev: info.devRev, swRev: info.swRev, hwRev: info.hwRev, fan: det.fan, fanLabel: fanLabel(info), poll: info.poll,
     cfgCount: info.cfgCount, tag: det.tag, longTag: det.longTag, desc: det.desc, msg: det.msg, date: det.date
   };
   if (device.mfr && device.model && prof?.profile.model?.startsWith(device.mfr)) device.model = prof.profile.model.slice(device.mfr.length).trim();
@@ -1450,14 +1458,14 @@ async function collectReport(){
   const status = { flags, ext, cmd48: det.cmd48 && det.cmd48.some(b => b) ? hex(det.cmd48) : null };
 
   const modelCode = {
-    note: prof && !prof.profile.suspect
+    note: prof && (!prof.profile.suspect || prof.profile.captured)
       ? `${mfr} holds the full model code in manufacturer-specific commands, which are not mapped for device revision ${info.devRev} yet. Capture ${P.hostTool(info.mfrId)} opening Device Information on this revision to add them.`
       : 'The full model code is held in manufacturer-specific commands, which are not mapped for this device yet.'
   };
 
   // Device-specific reads decoded for this exact profile and device revision (profiles.js).
   // Only plain reads that need no request data, and never anything marked as a guess.
-  const defs = prof && !prof.profile.suspect ? P.commandsFor(prof.profile, info.devRev) : {};
+  const defs = prof ? P.trustedCommands(prof.profile, info.devRev) : {};
   const safeRead = n => { const c = defs[n]; return c && c.rw === 'r' && !c.req && c.rsp && c.confidence !== 'guess' ? c : null; };
   const readDecoded = async n => { const c = safeRead(n); if (!c) return null; const d = await tryCmd(+n); if (!d || !d.length) return null; try { return c.rsp(d); } catch(e){ log(`Report: Command ${n} decode failed: ${e.message}`); return null; } };
   const byName = re => Object.keys(defs).filter(n => re.test(defs[n].name) && safeRead(n)).sort((a, b) => +a - +b);
@@ -1589,7 +1597,7 @@ log(`serial=${'serial' in navigator} usb=${'usb' in navigator} android=${isAndro
 /* ================= App shell: navigation, install, theme, offline ================= */
 (() => {
 'use strict';
-const APP_VERSION = '4.4.0'; // must match VERSION in sw.js
+const APP_VERSION = '4.5.0'; // must match VERSION in sw.js
 const $ = id => document.getElementById(id);
 
 // Navigation
