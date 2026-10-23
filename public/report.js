@@ -102,15 +102,20 @@ function render(r){
 
   /* ---------- 3 Model code and options ---------- */
   const mc = r.modelCode || {};
+  // Model codes typed from the nameplate (report form), for devices that don't report one over HART.
+  const fromDevice = [mc.model, ...(mc.lines || []).map(([, v]) => v)].filter(Boolean).map(v => v.replace(/\s/g, '').toUpperCase());
+  const nameplate = String(j.nameplate || '').split(/[\s,;]+/).map(s => s.trim()).filter(s => s && !fromDevice.includes(s.toUpperCase()));
   let mcBody;
-  if (mc.model || mc.materials){
+  if (mc.model || mc.materials || nameplate.length){
     mcBody = kv([
-      [mc.firstLabel || 'Model number', mc.model ? mono(mc.model) : 'Not read'],
+      ...(mc.model || !nameplate.length ? [[mc.firstLabel || 'Model number', mc.model ? mono(mc.model) : 'Not read']] : []),
       ...(mc.lines || []).map(([l, v]) => [l, mono(v)]),
+      ...nameplate.map((v, i) => [`Nameplate model code${nameplate.length > 1 ? ' ' + (i + 1) : ''}`, mono(v)]),
     ]);
     // Code-by-code breakdown of each model number, from the manufacturer's ordering tables (modelcode.js).
     const MC = window.HARTModelCode;
-    const allModels = [[mc.firstLabel || 'Model number', mc.model], ...(mc.lines || [])].filter(([, v]) => v);
+    const allModels = [[mc.firstLabel || 'Model number', mc.model], ...(mc.lines || []),
+      ...nameplate.map((v, i) => [`Nameplate model code${nameplate.length > 1 ? ' ' + (i + 1) : ''}`, v])].filter(([, v]) => v);
     const decs = MC ? MC.decodeAll(allModels.map(([, v]) => v)) : [];
     for (const [i, [label]] of allModels.entries()){
       const dec = decs[i];
@@ -133,6 +138,7 @@ function render(r){
         <tr><th>Remote seals / options</th><td class="rp-slot">Not yet decoded</td></tr>
       </table>
       <p>${esc(mc.note || 'The full model code is held in manufacturer-specific commands. These fields fill in automatically once the command has been mapped from a capture or the Field Device Specification.')}</p>
+      <p>To include it now, type the model code from the nameplate in the report form.</p>
     </div>`;
   }
   out += section(3, 'Model code and options', mcBody, 'rp-wide');
