@@ -2,7 +2,7 @@
 (() => {
 'use strict';
 const $ = id => document.getElementById(id);
-const APP_VER = '4.6.0';
+const APP_VER = '4.7.0';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const hex = b => Array.from(b, x => x.toString(16).padStart(2,'0').toUpperCase()).join(' ');
 const hx = (n, w=2) => '0x' + n.toString(16).toUpperCase().padStart(w,'0');
@@ -1370,7 +1370,7 @@ function showConsoleReply(n, data, r, d){
 /* ================= Device report ================= */
 // Reads the device afresh with universal and common-practice commands only, then hands a
 // plain data object to report.js. No device-specific commands are sent from here.
-const REPORT_FIELDS = [['rpSite','site',true],['rpLocation','location',false],['rpPurpose','purpose',true],['rpNotes','notes',false]];
+const REPORT_FIELDS = [['rpSite','site',true],['rpLocation','location',false],['rpPurpose','purpose',true],['rpNotes','notes',false],['rpModel','nameplate',false]];
 const rstore = { get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }, set(k,v){ try { localStorage.setItem(k,v); } catch(e){} } };
 REPORT_FIELDS.forEach(([id, key, keep]) => { if (keep){ const v = rstore.get('hart-report-' + key); if (v != null) $(id).value = v; } });
 
@@ -1597,7 +1597,7 @@ log(`serial=${'serial' in navigator} usb=${'usb' in navigator} android=${isAndro
 /* ================= App shell: navigation, install, theme, offline ================= */
 (() => {
 'use strict';
-const APP_VERSION = '4.6.0'; // must match VERSION in sw.js
+const APP_VERSION = '4.7.0'; // must match VERSION in sw.js
 const $ = id => document.getElementById(id);
 
 // Navigation

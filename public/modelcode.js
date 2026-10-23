@@ -231,6 +231,38 @@ function decode1199(m, opts = {}) {
   return { product: `Rosemount 1199 seal system, ${T.style[x[6]].toLowerCase()}`, source: `${UD}, 1199 seal system and ${x[6]} ordering tables`, rows };
 }
 
+/* ---------- Table-driven products (modelcode-data.js) ----------
+   Each product: prefix, positions [label, {code: meaning | {typeCode: meaning}}, typePositionIndex?], options {code: meaning}.
+   Positions are matched in order, longest code first. If any required position doesn't match, no breakdown is
+   given at all, so a code from a different product family is never half-decoded. */
+function decodeTable(m, p, raw) {
+  if (!m.startsWith(p.prefix)) return null;
+  let main = m, optTokens = null;
+  if (p.yokogawa) { const parts = raw.toUpperCase().replace(/\s/g, '').split('/'); main = parts[0].replace(/-/g, ''); optTokens = parts.slice(1).filter(Boolean); }
+  const rows = [], picked = [];
+  let i = 0;
+  for (const [label, table, typeIdx] of p.positions) {
+    const code = Object.keys(table).sort((a, b) => b.length - a.length).find(c => main.startsWith(c, i));
+    if (code == null) return null;
+    let v = table[code];
+    if (v && typeof v === 'object') v = v[picked[typeIdx]] ?? null;
+    rows.push([code, label, v]); picked.push(code); i += code.length;
+  }
+  if (optTokens) {
+    if (i < main.length) rows.push([main.slice(i), 'Suffix', null]);
+    for (const o of optTokens) rows.push(['/' + o, 'Option', p.options[o] || null]);
+  } else {
+    let s = main.slice(i);
+    while (s.length) {
+      const hit = [4, 3, 2].map(n => s.slice(0, n)).find(c => c.length > 1 && p.options[c]);
+      if (!hit) { rows.push([s, 'Option', null]); break; }
+      rows.push([hit, 'Option', p.options[hit]]); s = s.slice(hit.length);
+    }
+  }
+  return { product: p.name, source: p.source, rows };
+}
+const tableDecoders = () => (window.HARTModelData || []).map(p => (m, opts, raw) => decodeTable(m, p, raw));
+
 const DECODERS = [decode2088, decode1199];
 
 // Transmitter model codes that are in-line devices in the 1199 data sheet.
@@ -239,9 +271,10 @@ const isInline = model => /^(2088|WPG|SPG|2051H?T|3051H?T|3051S\d?T)/.test(Strin
 // Returns { product, source, rows: [{ code, label, meaning, decoded }] } or null if no decoder knows the model.
 // opts.inline can be set by the caller, or worked out from the other model numbers via decodeAll().
 function decode(model, opts = {}) {
-  const m = String(model || '').toUpperCase().replace(/[\s-]/g, '');
-  for (const d of DECODERS) {
-    const r = d(m, opts);
+  const raw = String(model || '').trim();
+  const m = raw.toUpperCase().replace(/[\s-]/g, '');
+  for (const d of [...DECODERS, ...tableDecoders()]) {
+    const r = d(m, opts, raw);
     if (r) return { ...r, model: m, rows: r.rows.map(([code, label, meaning]) => ({ code, label, meaning, decoded: !!meaning })) };
   }
   return null;

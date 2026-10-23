@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.7.0
+
+- **More model code breakdowns** in the device report, each from the manufacturer's own ordering tables:
+  - Rosemount 3051C and 3051T (data sheet 00813-0100-4001 Rev WH)
+  - Rosemount 2051C, 2051T and 2051G (00813-0100-4101 Rev RG)
+  - Rosemount 644 (00813-0100-4728 Rev WH), 3144P (00813-0100-4021 Rev TH) and 648 (00813-0100-4648 Rev HF)
+  - Yokogawa EJX510A and EJX530A (GS 01C25F01-01EN)
+  A code is only broken down when every required position matches that product's table; anything else is listed without a breakdown.
+- **Nameplate model codes** field in the report form. Temperature transmitters and most other devices don't report their model code over HART, so type it from the nameplate (several codes can be separated by spaces) and the report breaks it down the same way.
+
 ## 4.6.0
 
 - **Model code breakdown in the device report.** Each model number the device holds is now broken down code by code under "Model code and options", using Emerson's ordering tables:
