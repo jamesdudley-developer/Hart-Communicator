@@ -286,7 +286,7 @@
     <details id="stDetails">
       <summary>Sensor trim</summary>
       <div class="body">
-        <p class="hint"><span id="stIntro">Corrects the sensor reading against a reference value.</span> Uses HART common-practice Commands 80–83, which not every device supports.</p>
+        <p class="hint"><span id="stIntro">Corrects the sensor reading against a reference value.</span> Uses HART common-practice Commands 80–83, or the device's own trim commands where its profile defines them (Rosemount 644).</p>
         <div class="btns"><button id="stCheck">Check sensor trim support</button></div>
         <div id="stBody" class="hidden" style="display:grid;gap:10px">
           <table id="stInfo"></table>

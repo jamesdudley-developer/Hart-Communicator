@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.8.0
+
+- **Sensor trim on the Rosemount 644 (device revision 8).** The 644 doesn't use the standard trim commands, so Configure → Sensor trim now uses its own commands from the 644 Field Device Specification (Commands 142 to 146), checked against a capture of AMS trimming TIT406-2. It shows the calibration mode (factory or user trim) and trim limits, sets User trim before the first point, trims the lower and upper points, waits for the device (up to 30 seconds) and reports if the device rejected the trim and returned to factory trim. "Restore factory sensor trim" sets the calibration mode back to Factory trim.
+- The upper point must be above the lower point; the app checks this before sending.
+- The Capture tab names and decodes the 644's trim, calibrator mode, device options and latched status commands (138, 142–146, 178, 179, 181).
+
 ## 4.7.1
 
 - **Rosemount 644 (device revision 8):** the report now shows the alarm and saturation levels (Command 189: high alarm, low alarm, high saturation, low saturation in mA), decoded from a capture of AMS reading TIT406-2 and checked against its Alarm Type and Security screen.

@@ -89,7 +89,18 @@ function rmtPressureCaptured({ with139 = false } = {}) {
    (Rosemount levels). Same order as the 3051 Cmd 142, without the trailing byte. */
 function rmt644r8() {
   const H = window.HART;
+  const CAL = { 0: 'Factory trim', 1: 'User trim' };
   return {
+    138: { name: 'Read device options', rw: 'r', confidence: 'confirmed', rsp: d => ({ 'Device options (bits)': H.toHex([d[0]]), 'Dual sensor': !!(d[0] & 1), 'Hot Backup': !!(d[0] & 4), 'Drift alert': !!(d[0] & 16), 'DA1 diagnostics': !!(d[0] & 64) }) },
+    142: { name: 'Read sensor trim information', rw: 'r', confidence: 'confirmed', req: d => ({ sensor: d[0], units: d[1] }),
+      rsp: d => ({ sensor: d[0], units: d[1], 'Calibration mode': CAL[d[2]] ?? d[2], 'Upper trim limit': H.f32(d, 3), 'Lower trim limit': H.f32(d, 7), 'Upper trim value': H.f32(d, 11), 'Lower trim value': H.f32(d, 15) }) },
+    143: { name: 'Perform sensor trim upper', rw: 'w', confidence: 'confirmed', req: d => ({ sensor: d[0], units: d[1], value: H.f32(d, 2) }) },
+    144: { name: 'Perform sensor trim lower', rw: 'w', confidence: 'confirmed', req: d => ({ sensor: d[0], units: d[1], value: H.f32(d, 2) }) },
+    145: { name: 'Write calibration mode', rw: 'w', confidence: 'confirmed', req: d => ({ sensor: d[0], mode: CAL[d[1]] ?? d[1] }) },
+    146: { name: 'Read trim units', rw: 'r', confidence: 'confirmed', req: d => ({ sensor: d[0] }), rsp: d => ({ sensor: d[0], units: d[1] }) },
+    178: { name: 'Read latched device status', rw: 'r', confidence: 'confirmed', rsp: d => ({ bytes: H.toHex(d), 'Excess trim correction attempted': !!(d[2] & 8), 'Sensor trim failure': !!(d[2] & 16), 'Operation failure': !!(d[3] & 4) }) },
+    179: { name: 'Clear latched device status', rw: 'w', confidence: 'confirmed' },
+    181: { name: 'Write calibrator mode', rw: 'w', confidence: 'confirmed', req: d => ({ mode: d[0] === 0 ? 'Enable' : d[0] === 1 ? 'Disable' : d[0] }) },
     189: {
       name: 'Read alarm and saturation levels', rw: 'r', confidence: 'confirmed',
       rsp: d => ({ 'High alarm (mA)': H.f32(d, 0), 'Low alarm (mA)': H.f32(d, 4), 'High saturation (mA)': H.f32(d, 8), 'Low saturation (mA)': H.f32(d, 12) }),
@@ -117,6 +128,9 @@ const PROFILES = [
     commands: sensorCommands(140, 141),
     // AMS Device Information on TIT406-2 (rev 8, 23 Oct 2026) shows Model "644" only: no model number is
     // stored in the device. It shows the Cmd 0 device ID as "Electronics Serial Number".
+    // Sensor trim through device-specific commands (FDS rev 8 section 10.13–10.17, matched by an AMS capture
+    // on TIT406-2, 23 Oct 2026). The 644 does not use common-practice Commands 80–83.
+    trim: { revs: [8], sensor: 0, units: 146, info: 142, upper: 143, lower: 144, mode: 145 },
     noModelCode: '644', deviceIdLabel: 'Electronics serial number (device ID)',
     captured: { 8: rmt644r8() },
   },

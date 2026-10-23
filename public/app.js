@@ -2,7 +2,7 @@
 (() => {
 'use strict';
 const $ = id => document.getElementById(id);
-const APP_VER = '4.7.1';
+const APP_VER = '4.8.0';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const hex = b => Array.from(b, x => x.toString(16).padStart(2,'0').toUpperCase()).join(' ');
 const hx = (n, w=2) => '0x' + n.toString(16).toUpperCase().padStart(w,'0');
@@ -222,7 +222,7 @@ async function transact(fr, { quiet=false, timeout=900 } = {}){
 // Send a command with retries; returns { data, status } or throws
 async function cmd(number, data=[], opts={}){
   return exclusive(async () => {
-    let last = 'No reply', dr = 0;
+    let last = 'No reply', dr = 0, bz = 0;
     for (let attempt = 0; attempt < 3; attempt++){
       const fr = dev ? frame(0x82, dev.longAddr, number, data) : frame(0x02, [0x80 | (opts.poll & 0x3F)], number, data);
       const r = await transact(fr, opts);
@@ -231,7 +231,7 @@ async function cmd(number, data=[], opts={}){
       if (r.cmd !== number){ last = `Reply to wrong command (${r.cmd})`; continue; }
       const s0 = r.status[0];
       if (s0 & 0x80){ last = `Communication error ${hx(s0)}`; continue; }
-      if (s0 === 32){ last = 'Device busy'; await sleep(300); continue; }
+      if (s0 === 32){ last = 'Device busy'; if (opts.longBusy && bz++ < 100){ attempt--; await sleep(400); continue; } await sleep(300); continue; }
       if ((s0 === 33 || s0 === 34) && dr++ < 60){ last = 'Delayed response still running'; attempt--; await sleep(500); continue; }
       if (opts.raw){ handleDeviceStatus(r.status[1]); r.rcText = s0 ? respText(number, s0) : 'OK'; return r; }
       if (s0 !== 0 && s0 !== 8 && s0 !== 14) throw new Error(`Command ${number}: ${respText(number, s0)}`);
@@ -796,8 +796,29 @@ async function trimAt(target, inputId, n, nextStage){
 /* ----- Sensor trim (Commands 50, 80, 81, 82, 83) ----- */
 let st = null;
 const TRIM_SUPPORT = {0:'Not supported',1:'Single point',2:'Upper point only',3:'Lower and upper points'};
+// Device-specific sensor trim (profile.trim), e.g. Rosemount 644 rev 8: Cmds 142–146 per its FDS.
+const profTrim = () => { const t = prof?.profile.trim; return t && dev && !isSim() && t.revs.includes(dev.devRev) ? t : null; };
+async function readCustomTrim(t, units){
+  const d = (await cmd(t.info, [t.sensor, units], { longBusy: true })).data;
+  if (d.length < 19) throw new Error(`Unexpected Command ${t.info} reply`);
+  return { mode: d[2], maxL: f32(d,3), minL: f32(d,7), upper: f32(d,11), lower: f32(d,15) };
+}
 async function checkSensorTrim(){
   if (!dev || cfgBusy) return;
+  const t = profTrim();
+  if (t){
+    setCfgBusy(true); cfgMsg('Reading sensor trim…', ''); st = null; $('stBody').classList.add('hidden');
+    try {
+      const units = (await cmd(t.units, [t.sensor])).data[1];
+      const i = await readCustomTrim(t, units);
+      st = { custom: t, dv: t.sensor, support: 3, units, mode: i.mode, minL: i.minL, maxL: i.maxL, minU: i.minL, maxU: i.maxL,
+             lastL: i.mode === 1 ? i.lower : NaN, lastU: i.mode === 1 ? i.upper : NaN, minDiff: NaN };
+      renderSensorTrim();
+      cfgMsg(`Sensor trim is available on this device (Commands ${t.info}–${t.units}). Currently using ${i.mode === 1 ? 'a user trim' : 'the factory trim'}.`, 'ok');
+    } catch(e){ st = null; cfgMsg(`Sensor trim check failed: ${e.message.replace(/^Command \d+: /,'')}.`, 'bad'); }
+    setCfgBusy(false);
+    return;
+  }
   setCfgBusy(true);
   cfgMsg('Checking sensor trim support…', '');
   st = null; $('stBody').classList.add('hidden');
@@ -830,7 +851,9 @@ function renderSensorTrim(){
   $('stHighLi').classList.toggle('hidden', !hasHigh);
   $('stLowLbl').textContent = single ? 'Trim point' : 'Lower trim point';
   $('stLowBtn').textContent = single ? 'Trim' : 'Trim lower point';
-  const rows = [['Device variable', st.dv], ['Trim points', TRIM_SUPPORT[st.support] ?? `Code ${st.support}`]];
+  const rows = st.custom
+    ? [['Sensor', st.dv + 1], ['Calibration mode', st.mode === 1 ? 'User trim' : st.mode === 0 ? 'Factory trim' : `Code ${st.mode}`]]
+    : [['Device variable', st.dv], ['Trim points', TRIM_SUPPORT[st.support] ?? `Code ${st.support}`]];
   if (hasLow) rows.push([single ? 'Allowed range' : 'Lower point allowed', `${fmt(st.minL)} to ${fmt(st.maxL)} ${u}`], ['Last ' + (single ? 'trim point' : 'lower point'), isFinite(st.lastL) ? `${fmt(st.lastL)} ${u}` : '—']);
   if (hasHigh) rows.push(['Upper point allowed', `${fmt(st.minU)} to ${fmt(st.maxU)} ${u}`], ['Last upper point', isFinite(st.lastU) ? `${fmt(st.lastU)} ${u}` : '—']);
   if (st.support === 3 && isFinite(st.minDiff)) rows.push(['Minimum difference between points', `${fmt(st.minDiff)} ${u}`]);
@@ -839,8 +862,47 @@ function renderSensorTrim(){
   if (hasHigh && isFinite(st.lastU) && $('stHigh').value === '') $('stHigh').value = tidy(st.lastU);
   $('stBody').classList.remove('hidden');
 }
+async function customTrim(point){
+  const t = st.custom, low = point === 1, u = unitName(st.units);
+  const v = num(low ? 'stLow' : 'stHigh');
+  if (!isFinite(v)) return cfgMsg('Enter the reference value from your calibrator.', 'bad');
+  if (isFinite(st.minL) && isFinite(st.maxL) && (v < st.minL || v > st.maxL)) return cfgMsg(`That value is outside the sensor trim limits (${fmt(st.minL)} to ${fmt(st.maxL)} ${u}).`, 'bad');
+  const other = low ? st.lastU : st.lastL;
+  if (st.mode === 1 && isFinite(other) && (low ? v >= other : v <= other))
+    return cfgMsg(`The ${low ? 'lower' : 'upper'} point must be ${low ? 'below' : 'above'} the ${low ? 'upper' : 'lower'} trim point (${fmt(other)} ${u}).`, 'bad');
+  const name = `Sensor trim ${low ? 'lower' : 'upper'} point`;
+  const lines = [`Reference value: ${fmt(v)} ${u}`, `Live reading before trim: ${$('stLive').textContent}`,
+    'The device corrects its sensor reading to match the reference. The output will shift to suit.',
+    'Use two points well apart, near the ends of the range you use. If the correction is too large, the device rejects it and returns to factory trim.'];
+  if (st.mode !== 1) lines.push(`The calibration mode is changed to User trim first (Command ${t.mode}).`);
+  if (!(await confirmDialog(name, lines, true))) return;
+  if (st.mode !== 1){
+    const m = await runWrite({ label:'Set calibration mode to User trim', n:t.mode, data:[t.sensor, 1], refresh:false, confirm:false, detail:'Calibration mode: User trim.' });
+    if (!m) return;
+    st.mode = 1;
+  }
+  const r = await runWrite({ label:name, n: low ? t.lower : t.upper, data:[t.sensor, st.units, ...fbytes(v)], output:true, refresh:false, confirm:false,
+    detail:`Reference ${fmt(v)} ${u}, reading before trim ${$('stLive').textContent}.` });
+  if (!r) return;
+  // The trim takes up to 30 s; Command 48 byte 2 then reports whether it was rejected (FDS section 7.3).
+  cfgMsg(`${name}: applying (can take up to 30 seconds)…`, '');
+  setCfgBusy(true);
+  try {
+    const s = (await cmd(48, [], { longBusy: true })).data;
+    const i = await readCustomTrim(t, st.units);
+    Object.assign(st, { mode: i.mode, lastL: i.mode === 1 ? i.lower : NaN, lastU: i.mode === 1 ? i.upper : NaN });
+    renderSensorTrim();
+    if (s.length > 2 && (s[2] & 0x18)){
+      const why = s[2] & 0x10 ? 'the trim failed' : 'the correction was too large';
+      addChange(name, 'Rejected by the device', `Rejected: ${why}. Device returned to ${i.mode === 1 ? 'user' : 'factory'} trim.`, 'bad');
+      cfgMsg(`${name}: the device reports ${why}${i.mode === 1 ? '' : ' and has returned to factory trim'}. Check the reference value and that the two points are well apart.`, 'bad');
+    } else cfgMsg(`${name}: done. Check the live reading now matches your calibrator.`, 'ok');
+  } catch(e){ log(e.message, 'er'); cfgMsg(`${name}: written, but the result could not be read back: ${e.message.replace(/^Command \d+: /,'')}.`, 'warn'); }
+  setCfgBusy(false);
+}
 async function sensorTrim(point){
   if (!st) return;
+  if (st.custom) return customTrim(point);
   const low = point === 1, u = unitName(st.units);
   const v = num(low ? 'stLow' : 'stHigh');
   if (!isFinite(v)) return cfgMsg('Enter the reference value from your calibrator.', 'bad');
@@ -859,6 +921,13 @@ async function sensorTrim(point){
 }
 async function resetSensorTrim(){
   if (!st) return;
+  if (st.custom){
+    const r = await runWrite({ label:'Restore factory sensor trim', n:st.custom.mode, data:[st.custom.sensor, 0], output:true, refresh:false,
+      lines:['The calibration mode is set to Factory trim. User trim points are ignored and the factory calibration is used.'],
+      detail:'Calibration mode: Factory trim.' });
+    if (r){ $('stLow').value = ''; $('stHigh').value = ''; await checkSensorTrim(); }
+    return;
+  }
   const r = await runWrite({ label:'Restore factory sensor trim', n:83, data:[st.dv], output:true, refresh:false,
     lines:['All sensor trim adjustments made in the field are removed and the factory calibration is restored.'],
     detail:'Sensor trim reset to factory.' });
@@ -1604,7 +1673,7 @@ log(`serial=${'serial' in navigator} usb=${'usb' in navigator} android=${isAndro
 /* ================= App shell: navigation, install, theme, offline ================= */
 (() => {
 'use strict';
-const APP_VERSION = '4.7.1'; // must match VERSION in sw.js
+const APP_VERSION = '4.8.0'; // must match VERSION in sw.js
 const $ = id => document.getElementById(id);
 
 // Navigation
