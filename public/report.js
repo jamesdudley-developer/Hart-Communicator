@@ -90,7 +90,7 @@ function render(r){
     ['Manufacturer', d.mfr],
     ['Model (from device type)', d.model || 'Not in the profile library'],
     ['Device type', mono(d.devTypeHex)],
-    ['Device ID', mono(d.devIdDec ?? d.devId)],
+    [d.devIdLabel || 'Device ID', mono(d.devIdDec ?? d.devId)],
     ['HART revision', d.hartRev],
     ['Device / software / hardware rev.', `${d.devRev} / ${d.swRev} / ${d.hwRev}`],
     [d.fanLabel || 'Final assembly number', d.fan ?? null],
@@ -133,9 +133,9 @@ function render(r){
   } else {
     mcBody = `<div class="rp-pending">
       <table class="rp-kv">
-        <tr><th>Model number</th><td class="rp-slot">Not yet decoded</td></tr>
-        <tr><th>Extended model code</th><td class="rp-slot">Not yet decoded</td></tr>
-        <tr><th>Remote seals / options</th><td class="rp-slot">Not yet decoded</td></tr>
+        <tr><th>Model number</th><td class="rp-slot">${mc.notStored ? 'Not stored in the device' : 'Not yet decoded'}</td></tr>
+        ${mc.notStored ? '' : `<tr><th>Extended model code</th><td class="rp-slot">Not yet decoded</td></tr>
+        <tr><th>Remote seals / options</th><td class="rp-slot">Not yet decoded</td></tr>`}
       </table>
       <p>${esc(mc.note || 'The full model code is held in manufacturer-specific commands. These fields fill in automatically once the command has been mapped from a capture or the Field Device Specification.')}</p>
       <p>To include it now, type the model code from the nameplate in the report form.</p>
