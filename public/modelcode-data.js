@@ -2,6 +2,490 @@
    without checking the data sheet. Positions: [label, {code: meaning or {typeCode: meaning}}, typePositionIndex?] */
 window.HARTModelData = [
  {
+  "id": "3051SC",
+  "prefix": "3051S",
+  "name": "Rosemount 3051S coplanar pressure transmitter",
+  "source": "Emerson Rosemount 3051S Series Pressure Transmitter Product Data Sheet 00813-0100-4801 Rev UW (April 2026), ordering information",
+  "positions": [
+   [
+    "Model",
+    {
+     "3051S": "Rosemount 3051S Scalable pressure transmitter"
+    }
+   ],
+   [
+    "Performance class",
+    {
+     "1": "Ultra: 0.025 % span accuracy, 200:1 rangedown, 15-year stability, 15-year limited warranty",
+     "2": "Classic: 0.035 % span accuracy, 150:1 rangedown, 15-year stability",
+     "3": "Ultra for Flow: 0.04 % reading accuracy, 200:1 turndown, 15-year stability, 15-year limited warranty"
+    }
+   ],
+   [
+    "Connection type",
+    {
+     "C": "Coplanar"
+    }
+   ],
+   [
+    "Measurement type",
+    {
+     "D": "Differential",
+     "G": "Gauge",
+     "A": "Absolute"
+    }
+   ],
+   [
+    "Pressure range",
+    {
+     "1A": {
+      "D": "−25 to 25 inH2O (−62.16 to 62.16 mbar)",
+      "G": "−25 to 25 inH2O (−62.16 to 62.16 mbar)",
+      "A": "0 to 30 psia (0 to 2.07 bar)"
+     },
+     "2A": {
+      "D": "−250 to 250 inH2O (−621.6 to 621.6 mbar)",
+      "G": "−250 to 250 inH2O (−621.6 to 621.6 mbar)",
+      "A": "0 to 150 psia (0 to 10.34 bar)"
+     },
+     "3A": {
+      "D": "−1000 to 1000 inH2O (−2.49 to 2.49 bar)",
+      "G": "−393 to 1000 inH2O (−0.97 to 2.49 bar)",
+      "A": "0 to 800 psia (0 to 55.16 bar)"
+     },
+     "4A": {
+      "D": "−300 to 300 psi (−20.68 to 20.68 bar)",
+      "G": "−14.2 to 300 psig (−0.97 to 20.68 bar)",
+      "A": "0 to 4000 psia (0 to 275.79 bar)"
+     },
+     "5A": {
+      "D": "−2000 to 2000 psi (−137.89 to 137.89 bar)",
+      "G": "−14.2 to 2000 psig (−0.97 to 137.89 bar)"
+     },
+     "0A": {
+      "D": "−3 to 3 inH2O (−7.46 to 7.46 mbar)",
+      "A": "0 to 5 psia (0 to 0.34 bar)"
+     }
+    },
+    3
+   ],
+   [
+    "Isolating diaphragm",
+    {
+     "2": "316L SST",
+     "3": "Alloy C-276",
+     "4": "Alloy 400",
+     "5": "Tantalum",
+     "6": "Gold-plated Alloy 400",
+     "7": "Gold-plated 316L SST"
+    }
+   ],
+   [
+    "Process connection",
+    {
+     "000": "None (no process flange)",
+     "A11": "Assemble to Rosemount 305 integral manifold",
+     "A12": "Assemble to Rosemount 304 or AMF manifold and SST traditional flange",
+     "A15": "Assemble to 304 or AMF manifold to SST traditional flange with Alloy C-276 drain vents",
+     "A16": "Assemble to 304 or AMF manifold to DIN SST traditional flange",
+     "A22": "Assemble to 304 or AMF manifold to SST Coplanar flange",
+     "B11": "Assemble to one Rosemount 1199 seal (SST)",
+     "B12": "Assemble to two 1199 seals (SST)",
+     "C11": "Assemble to Rosemount 405C or 405P primary element",
+     "D11": "Assemble to Rosemount 1195 integral orifice and 305 integral manifold",
+     "EA2": "Assemble to 485 or 405A Annubar with Coplanar flange, SST flange, 316 SST drain/vent",
+     "EA3": "Assemble to 485 or 405A Annubar with Coplanar flange, cast C-276 flange, Alloy C-276 drain/vent",
+     "EA5": "Assemble to 485 or 405A Annubar with Coplanar flange, SST flange, Alloy C-276 drain/vent",
+     "E11": "Coplanar flange, ¼–18 NPT, CS flange, 316 SST drain/vent",
+     "E12": "Coplanar flange, ¼–18 NPT, SST flange, 316 SST drain/vent",
+     "E13": "Coplanar flange, ¼–18 NPT, cast C-276 flange, Alloy C-276 drain/vent",
+     "E14": "Coplanar flange, ¼–18 NPT, Alloy 400 flange, Alloy 400/K-500 drain/vent",
+     "E15": "Coplanar flange, ¼–18 NPT, SST flange, Alloy C-276 drain/vent",
+     "E16": "Coplanar flange, ¼–18 NPT, CS flange, Alloy C-276 drain/vent",
+     "E21": "Coplanar flange, RC ¼, CS flange, 316 SST drain/vent",
+     "E22": "Coplanar flange, RC ¼, SST flange, 316 SST drain/vent",
+     "E23": "Coplanar flange, RC ¼, cast C-276 flange, Alloy C-276 drain/vent",
+     "E25": "Coplanar flange, RC ¼, SST flange, Alloy C-276 drain/vent",
+     "E26": "Coplanar flange, RC ¼, CS flange, Alloy C-276 drain/vent",
+     "F12": "Traditional flange, ¼–18 NPT, SST flange, 316 SST drain/vent",
+     "F13": "Traditional flange, ¼–18 NPT, cast C-276 flange, Alloy C-276 drain/vent",
+     "F14": "Traditional flange, ¼–18 NPT, cast Alloy 400 flange, Alloy 400/K-500 drain/vent",
+     "F15": "Traditional flange, ¼–18 NPT, SST flange, Alloy C-276 drain/vent",
+     "F22": "Traditional flange, RC ¼, SST flange, 316 SST drain/vent",
+     "F23": "Traditional flange, RC ¼, cast C-276 flange, Alloy C-276 drain/vent",
+     "F24": "Traditional flange, RC ¼, cast Alloy 400 flange, Alloy 400/K-500 drain/vent",
+     "F25": "Traditional flange, RC ¼, SST flange, Alloy C-276 drain/vent",
+     "F52": "DIN-compliant traditional flange, ¼–18 NPT, SST flange, 316 SST drain/vent, 7/16 in bolting",
+     "G11": "Vertical mount level flange, 2 in ANSI Class 150, SST flange, 316 SST drain/vent",
+     "G12": "Vertical mount level flange, 2 in ANSI Class 300, SST flange, 316 SST drain/vent",
+     "G21": "Vertical mount level flange, 3 in ANSI Class 150, SST flange, 316 SST drain/vent",
+     "G22": "Vertical mount level flange, 3 in ANSI Class 300, SST flange, 316 SST drain/vent",
+     "G31": "Vertical mount level flange, DIN DN 50 PN 40, SST flange, 316 SST drain/vent",
+     "G41": "Vertical mount level flange, DIN DN 80 PN 40, SST flange, 316 SST drain/vent",
+     "F32": "Bottom vent traditional flange, ¼–18 NPT, SST flange, 316 SST drain/vent",
+     "F42": "Bottom vent traditional flange, RC ¼, SST flange, 316 SST drain/vent",
+     "F62": "DIN-compliant traditional flange, ¼–18 NPT, SST flange, 316 SST drain/vent, M10 bolting",
+     "F72": "DIN-compliant traditional flange, ¼–18 NPT, SST flange, 316 SST drain/vent, M12 bolting"
+    }
+   ],
+   [
+    "Output",
+    {
+     "A": "4–20 mA with HART",
+     "F": "FOUNDATION Fieldbus",
+     "X": "WirelessHART"
+    }
+   ],
+   [
+    "Housing",
+    {
+     "00": "None (SuperModule spare part)",
+     "1A": "Plantweb housing, aluminium, ½–14 NPT",
+     "1B": "Plantweb housing, aluminium, M20 × 1.5",
+     "1C": "Plantweb housing, aluminium, G½",
+     "1J": "Plantweb housing, SST, ½–14 NPT",
+     "1K": "Plantweb housing, SST, M20 × 1.5",
+     "1L": "Plantweb housing, SST, G½",
+     "5A": "Wireless Plantweb housing, aluminium, ½–14 NPT",
+     "5J": "Wireless Plantweb housing, SST, ½–14 NPT",
+     "2E": "Junction box housing with output for remote display and interface, aluminium, ½–14 NPT",
+     "2F": "Junction box housing with output for remote display and interface, aluminium, M20 × 1.5",
+     "2G": "Junction box housing with output for remote display and interface, aluminium, G½",
+     "2M": "Junction box housing with output for remote display and interface, SST, ½–14 NPT"
+    }
+   ]
+  ],
+  "options": {
+   "WA": "User configurable update rate",
+   "3": "2.4 GHz direct sequence spread spectrum (DSSS), IEC 62591 (WirelessHART)",
+   "WK": "External antenna",
+   "WM": "Extended range, external antenna",
+   "WJ": "Remote antenna",
+   "WN": "High-gain, remote antenna",
+   "1": "Adapter for black power module (intrinsically safe [IS] power module sold separately)",
+   "HR7": "Configured for HART Revision 7",
+   "WR3": "3-year limited warranty",
+   "WR5": "5-year limited warranty",
+   "A01": "FOUNDATION Fieldbus advanced control function block suite",
+   "D01": "FOUNDATION Fieldbus diagnostics suite: Process Intelligence; Plugged Impulse Line Diagnostic",
+   "DA2": "Advanced HART diagnostics suite: Process Intelligence; Loop Integrity; Plugged Impulse Line Diagnostic; Process Alerts; Service Alerts; Variable Log; Event Log",
+   "B4": "Coplanar flange bracket, all stainless steel (SST), 2‑inch pipe and panel",
+   "B1": "Traditional flange bracket, carbon steel (CS), 2‑inch pipe",
+   "B2": "Traditional flange bracket, CS, panel",
+   "B3": "Traditional flange flat bracket, CS, 2‑inch pipe",
+   "B7": "Traditional flange bracket, B1 with SST bolts",
+   "B8": "Traditional flange bracket, B2 with SST bolts",
+   "B9": "Traditional flange bracket, B3 with SST bolts",
+   "BA": "Traditional flange bracket, B1, all SST",
+   "BC": "Traditional flange bracket, B3, all SST",
+   "BE": "316 SST B4-style bracket with 316 SST bolting",
+   "C1": "Custom software configuration",
+   "C2": "Custom flow configuration (requires H01 and Configuration Data Sheet)",
+   "C3": "Gauge pressure calibration on Rosemount 3051S_CA4 only",
+   "C4": "NAMUR alarm and saturation levels, High alarm",
+   "C5": "Measurement Canada accuracy approval",
+   "C6": "Custom alarm and saturation signal levels, High alarm (requires C1 and Configuration Data Sheet)",
+   "C7": "Custom alarm and saturation signal levels, Low alarm (requires C1 and Configuration Data Sheet)",
+   "C8": "Low alarm (standard Rosemount alarm and saturation levels)",
+   "D1": "Hardware adjustments (Zero, Span, Alarm, Security)",
+   "D2": "½-14 NPT flange adapter",
+   "D9": "RC½ stainless steel (SST) flange adapter",
+   "D3": "Measurement Canada accuracy approval",
+   "D4": "External ground screw assembly",
+   "D5": "Remove transmitter drain/vent valves (install plugs)",
+   "D7": "Stainless steel (SST) Coplanar flange without drain/vent ports",
+   "DO": "316 SST conduit plug",
+   "E1": "ATEX Flameproof",
+   "I1": "ATEX Intrinsic Safety",
+   "IA": "ATEX FISCO Intrinsic Safety (FOUNDATION Fieldbus protocol only)",
+   "N1": "ATEX Type n",
+   "K1": "ATEX Flameproof, Intrinsic Safety, Type n, Dust",
+   "ND": "ATEX Dust",
+   "E4": "Japan Flameproof",
+   "I4": "Japan Intrinsic Safety",
+   "E5": "USA Explosion-proof, Dust Ignition-proof",
+   "I5": "USA Intrinsically Safe; Nonincendive",
+   "IE": "USA FISCO Intrinsically Safe (FOUNDATION Fieldbus protocol only)",
+   "K5": "USA Explosion-proof, Dust Ignition-proof, Intrinsically Safe, Division 2",
+   "E6": "Canada Explosion-proof, Dust Ignition-proof, Division 2",
+   "I6": "Canada Intrinsically Safe",
+   "IF": "Canada FISCO Intrinsically Safe (FOUNDATION Fieldbus protocol only)",
+   "K6": "Canada Explosion-proof, Dust Ignition-proof, Intrinsically Safe, Division 2",
+   "E7": "IECEx Flameproof, Dust",
+   "I7": "IECEx Intrinsic Safety",
+   "IG": "IECEx FISCO Intrinsic Safety (FOUNDATION Fieldbus protocol only)",
+   "N7": "IECEx Type n",
+   "K7": "IECEx Flameproof, Dust, Intrinsic Safety, Type n",
+   "E2": "Brazil Flameproof",
+   "I2": "Brazil Intrinsic Safety",
+   "IB": "Brazil FISCO Intrinsic Safety",
+   "K2": "Brazil Flameproof, Intrinsic Safety",
+   "E3": "China Flameproof",
+   "I3": "China Intrinsic Safety",
+   "N3": "China Type n",
+   "EP": "Korea Flameproof",
+   "IP": "Korea Intrinsic Safety",
+   "KP": "Korea Flameproof, Intrinsic Safety",
+   "EM": "Technical Regulations Customs Union (EAC) Flameproof",
+   "IM": "Technical Regulations Customs Union (EAC) Intrinsic Safety",
+   "IN": "Technical Regulations Customs Union (EAC) FISCO Intrinsic Safety",
+   "KM": "Technical Regulations Customs Union (EAC) Flameproof and Intrinsic Safety",
+   "KA": "ATEX and Canada Flameproof, Intrinsically Safe, Division 2",
+   "KB": "USA and Canada Explosion-proof, Dust Ignition-proof, Intrinsically Safe, and Division 2 (combination of K5 and C6)",
+   "KC": "USA and ATEX Explosion-proof, Intrinsically Safe, Division 2",
+   "KD": "USA, Canada, and ATEX Explosion-proof, Intrinsically Safe",
+   "KG": "USA, Canada, ATEX, and IECEx FISCO Intrinsic Safety",
+   "KQ": "USA, Canada, ATEX Intrinsic Safety Combination",
+   "KS": "USA, Canada, IECEx, ATEX Explosion Proof, Intrinsically Safe, Dust, Non-Incendive, Type-N, Division 2",
+   "EW": "India Flameproof Approval",
+   "IW": "India Intrinsic Safety",
+   "IZ": "India FISCO Intrinsic Safety",
+   "KW": "India Flameproof; Intrinsic Safety",
+   "SBS": "American Bureau of Shipping",
+   "SBV": "Bureau Veritas (BV) Type Approval",
+   "SDN": "Det Norske Veritas (DNV) Type Approval",
+   "SLL": "Lloyd's Register (LR) Type Approval",
+   "Y2": "316 stainless steel (SST) nameplate, top tag, wire-on tag(s), and fasteners",
+   "L1": "Inert sensor fill fluid",
+   "L2": "Graphite-filled PTFE O-ring",
+   "L4": "Austenitic 316 stainless steel (SST) bolts",
+   "L5": "ASTM A 193, Grade B7M bolts",
+   "L6": "Alloy K-500 bolts",
+   "L7": "ASTM A453, Class D, Grade 660 bolts",
+   "L8": "ASTM A193, Class 2, Grade B8M bolts 15156 and NACE MR0103 conformance is required for bolting, L7 is the recommended bolting option.",
+   "M5": "Plantweb LCD display",
+   "M7": "Remote mount LCD display and interface, Plantweb housing, no cable, stainless steel (SST) bracket",
+   "M8": "Remote mount LCD display and interface, Plantweb housing, 50 ft. (15 m) cable, SST bracket",
+   "M9": "Remote mount LCD display and interface, Plantweb housing, 100 ft. (31 m) cable, SST bracket Emerson representative for additional information.",
+   "P1": "Hydrostatic testing with certificate",
+   "P2": "Cleaning for special services",
+   "P3": "Cleaning for special services with testing for <1 ppm chlorine/fluorine",
+   "P9": "4,500 psig (310 bar) static pressure limit (Rosemount 3051S_CD only)",
+   "P0": "6,092 psig (420 bar) static pressure limit (3051S_CD only) system may be limited by the rating of the Rosemount 1199 Seal System selected. manifold or DIN-compliant traditional flange process connection, and Bolting option L8. Limited to Pressure range (differential), ranges 2A – 5A.",
+   "Q4": "Calibration certificate",
+   "QP": "Calibration certificate and tamper evident seal",
+   "Q8": "Material traceability certification per EN 10204 3.1",
+   "Q76": "PMI verification and certificate",
+   "QT": "Safety certified to IEC 61508 with certificate of failure mode, effects, and diagnostic analysis (FMEDA)",
+   "T1": "Transient terminal block",
+   "DW": "NSF drinking water approval",
+   "Q16": "Surface finish certification for sanitary remote seals",
+   "QZ": "Remote seal system performance calculation report",
+   "GE": "M12, 4-pin, male connector (eurofast)",
+   "GM": "A size mini, 4-pin, male connector (minifast)",
+   "Q15": "Certificate of compliance to NACE MR0175/ISO15156 for wetted materials",
+   "Q25": "Certificate of compliance to NACE MR0103 for wetted materials",
+   "BR5": "–58 °F (–50 °C) cold temperature operation",
+   "BR6": "–76 °F (–60 °C) cold temperature operation",
+   "Z1": "High temperature liquid thread sealant (–65 to +400 ℉ [–54 to +205 °C] temperature rating)",
+   "Z2": "Liquid thread sealant (–63 to +302 ℉ [–53 to +150 °C] temperature rating)",
+   "Z3": "Anaerobic PTFE paste"
+  }
+ },
+ {
+  "id": "3051ST",
+  "prefix": "3051S",
+  "name": "Rosemount 3051S in-line pressure transmitter",
+  "source": "Emerson Rosemount 3051S Series Pressure Transmitter Product Data Sheet 00813-0100-4801 Rev UW (April 2026), ordering information",
+  "positions": [
+   [
+    "Model",
+    {
+     "3051S": "Rosemount 3051S Scalable pressure transmitter"
+    }
+   ],
+   [
+    "Performance class",
+    {
+     "1": "Ultra: 0.025 % span accuracy, 200:1 rangedown, 15-year stability, 15-year limited warranty",
+     "2": "Classic: 0.035 % span accuracy, 150:1 rangedown, 15-year stability"
+    }
+   ],
+   [
+    "Connection type",
+    {
+     "T": "In-line"
+    }
+   ],
+   [
+    "Measurement type",
+    {
+     "G": "Gauge",
+     "A": "Absolute"
+    }
+   ],
+   [
+    "Pressure range",
+    {
+     "1A": {
+      "G": "−14.7 to 30 psi (−1.01 to 2.06 bar)",
+      "A": "0 to 30 psia (2.06 bar)"
+     },
+     "2A": {
+      "G": "−14.7 to 150 psi (−1.01 to 10.34 bar)",
+      "A": "0 to 150 psia (10.34 bar)"
+     },
+     "3A": {
+      "G": "−14.7 to 800 psi (−1.01 to 55.15 bar)",
+      "A": "0 to 800 psia (55.15 bar)"
+     },
+     "4A": {
+      "G": "−14.7 to 4000 psi (−1.01 to 275.79 bar)",
+      "A": "0 to 4000 psia (275.79 bar)"
+     },
+     "5A": {
+      "G": "−14.7 to 10000 psi (−1.01 to 689.47 bar)",
+      "A": "0 to 10000 psia (689.47 bar)"
+     }
+    },
+    3
+   ],
+   [
+    "Isolating diaphragm",
+    {
+     "2": "316L SST",
+     "3": "Alloy C-276"
+    }
+   ],
+   [
+    "Process connection",
+    {
+     "A11": "Assemble to Rosemount 306 integral manifold",
+     "B11": "Assemble to one Rosemount 1199 seal",
+     "E11": "½–14 NPT female",
+     "G11": "G½ A DIN 16288 male",
+     "H11": "Coned and threaded, autoclave type F-250-C",
+     "F11": "Non-threaded instrument flange (I-flange)"
+    }
+   ],
+   [
+    "Output",
+    {
+     "A": "4–20 mA with HART",
+     "F": "FOUNDATION Fieldbus",
+     "X": "WirelessHART"
+    }
+   ],
+   [
+    "Housing",
+    {
+     "00": "None (SuperModule spare part)",
+     "1A": "Plantweb housing, aluminium, ½–14 NPT",
+     "1B": "Plantweb housing, aluminium, M20 × 1.5",
+     "1J": "Plantweb housing, SST, ½–14 NPT",
+     "1K": "Plantweb housing, SST, M20 × 1.5",
+     "5A": "Wireless Plantweb housing, aluminium, ½–14 NPT",
+     "5J": "Wireless Plantweb housing, SST, ½–14 NPT",
+     "2E": "Junction box housing with output for remote display and interface, aluminium, ½–14 NPT",
+     "2F": "Junction box housing with output for remote display and interface, aluminium, M20 × 1.5",
+     "2M": "Junction box housing with output for remote display and interface, SST, ½–14 NPT"
+    }
+   ]
+  ],
+  "options": {
+   "WA": "User configurable update rate",
+   "3": "2.4 GHz direct sequence spread spectrum (DSSS), IEC 62591 (WirelessHART)",
+   "WK": "External antenna",
+   "WM": "Extended range, external antenna",
+   "WJ": "Remote antenna",
+   "WN": "High-gain, remote antenna",
+   "1": "Standard life Black Power Module (Intrinsically Safe [IS] power module sold separately)",
+   "2": "Extended life Blue Power Module (IS power module sold separately)",
+   "HR7": "Configured for HART Revision 7",
+   "WR3": "3-year limited warranty",
+   "WR5": "5-year limited warranty",
+   "A01": "FOUNDATION Fieldbus advanced control function block suite",
+   "D01": "FOUNDATION Fieldbus diagnostics suite: Process Intelligence; Plugged Impulse Line Diagnostic",
+   "DA2": "Advanced HART diagnostics suite: Process Intelligence; Loop Integrity; Plugged Impulse Line Diagnostic; Process Alerts; Service Alerts; Variable Log; Event Log",
+   "B4": "Bracket, all stainless steel (SST), 2‑inch pipe and panel",
+   "BE": "316 SST B4-style bracket with 316 SST bolting",
+   "C1": "Custom software configuration",
+   "C4": "NAMUR alarm and saturation levels, High alarm",
+   "C5": "Measurement Canada accuracy approval",
+   "C6": "Custom alarm and saturation signal levels, High alarm (requires C1 and Configuration Data Sheet)",
+   "C7": "Custom alarm and saturation signal levels, Low alarm (requires C1 and Configuration Data Sheet)",
+   "C8": "Low alarm (standard Rosemount alarm and saturation levels)",
+   "D1": "Hardware adjustments (Zero, Span, Alarm, Security)",
+   "D3": "Measurement Canada accuracy approval",
+   "D4": "External ground screw assembly",
+   "DO": "316 SST conduit plug",
+   "E1": "ATEX Flameproof",
+   "I1": "ATEX Intrinsic Safety",
+   "IA": "ATEX FISCO Intrinsic Safety (FOUNDATION Fieldbus protocol only)",
+   "N1": "ATEX Type n",
+   "K1": "ATEX Flameproof, Intrinsic Safety, Type n, Dust",
+   "ND": "ATEX Dust",
+   "E4": "Japan Flameproof",
+   "I4": "Japan Intrinsic Safety",
+   "E5": "USA Explosion-proof, Dust Ignition-proof",
+   "I5": "USA Intrinsically Safe; Nonincendive",
+   "IE": "USA FISCO Intrinsically Safe (FOUNDATION Fieldbus protocol only)",
+   "K5": "USA Explosion-proof, Dust Ignition-proof, Intrinsically Safe, Division 2",
+   "E6": "Canada Explosion-proof, Dust Ignition-proof, Division 2",
+   "I6": "Canada Intrinsically Safe",
+   "IF": "Canada FISCO Intrinsically Safe (FOUNDATION Fieldbus protocol only)",
+   "K6": "Canada Explosion-proof, Dust Ignition-proof, Intrinsically Safe, Division 2",
+   "E7": "IECEx Flameproof, Dust",
+   "I7": "IECEx Intrinsic Safety",
+   "IG": "IECEx FISCO Intrinsic Safety (FOUNDATION Fieldbus protocol only)",
+   "N7": "IECEx Type n",
+   "K7": "IECEx Flameproof, Dust, Intrinsic Safety, Type n",
+   "E2": "Brazil Flameproof",
+   "I2": "Brazil Intrinsic Safety",
+   "IB": "Brazil FISCO Intrinsic Safety",
+   "K2": "Brazil Flameproof, Intrinsic Safety",
+   "E3": "China Flameproof",
+   "I3": "China Intrinsic Safety",
+   "N3": "China Type n",
+   "EP": "Korea Flameproof",
+   "IP": "Korea Intrinsic Safety",
+   "KP": "Korea Flameproof, Intrinsic Safety",
+   "EM": "Technical Regulations Customs Union (EAC) Flameproof",
+   "IM": "Technical Regulations Customs Union (EAC) Intrinsic Safety",
+   "IN": "Technical Regulations Customs Union (EAC) FISCO Intrinsic Safety",
+   "KM": "Technical Regulations Customs Union (EAC) Flameproof and Intrinsic Safety",
+   "KA": "ATEX and Canada Flameproof, Intrinsically Safe, Division 2",
+   "KB": "USA and Canada Explosion-proof, Dust Ignition-proof, Intrinsically Safe, and Division 2 (combination of K5 and C6)",
+   "KC": "USA and ATEX Explosion-proof, Intrinsically Safe, Division 2",
+   "KD": "USA, Canada, and ATEX Explosion-proof, Intrinsically Safe",
+   "KG": "USA, Canada, ATEX, and IECEx FISCO Intrinsic Safety",
+   "KQ": "USA, Canada, ATEX Intrinsic Safety Combination",
+   "KS": "USA, Canada, IECEx, ATEX Explosion Proof, Intrinsically Safe, Dust, Non-Incendive, Type-N, Division 2",
+   "EW": "India Flameproof Approval",
+   "IW": "India Intrinsic Safety",
+   "IZ": "India FISCO Intrinsic Safety",
+   "KW": "India Flameproof; Intrinsic Safety",
+   "SBS": "American Bureau of Shipping",
+   "SBV": "Bureau Veritas (BV) Type Approval",
+   "SDN": "Det Norske Veritas (DNV) Type Approval",
+   "SLL": "Lloyd's Register (LR) Type Approval",
+   "Y2": "316 stainless steel (SST) nameplate, top tag, wire-on tag(s), and fasteners",
+   "L1": "Inert sensor fill fluid",
+   "M5": "Plantweb LCD display",
+   "M7": "Remote mount LCD display and interface, Plantweb housing, no cable, stainless steel (SST) bracket",
+   "M8": "Remote mount LCD display and interface, Plantweb housing, 50 ft. (15 m) cable, SST bracket",
+   "M9": "Remote mount LCD display and interface, Plantweb housing, 100 ft. (31 m) cable, SST bracket Emerson representative for additional information.",
+   "P1": "Hydrostatic testing with certificate",
+   "P2": "Cleaning for special services",
+   "P3": "Cleaning for special services with testing for <1 ppm chlorine/fluorine",
+   "Q4": "Calibration certificate",
+   "QP": "Calibration certificate and tamper evident seal",
+   "Q8": "Material traceability certification per EN 10204 3.1",
+   "Q76": "PMI verification and certificate",
+   "QT": "Safety certified to IEC 61508 with certificate of failure mode, effects, and diagnostic analysis (FMEDA)",
+   "T1": "Transient terminal block",
+   "DW": "NSF drinking water approval",
+   "Q16": "Surface finish certification for sanitary remote seals",
+   "QZ": "Remote seal system performance calculation report",
+   "GE": "M12, 4-pin, male connector (eurofast)",
+   "GM": "A size mini, 4-pin, male connector (minifast)",
+   "Q15": "Certificate of compliance to NACE MR0175/ISO15156 for wetted materials",
+   "Q25": "Certificate of compliance to NACE MR0103 for wetted materials",
+   "BR5": "–58 °F (–50 °C) cold temperature operation",
+   "BR6": "–76 °F (–60 °C) cold temperature operation"
+  }
+ },
+ {
   "id": "3051C",
   "prefix": "3051C",
   "name": "Rosemount 3051C coplanar pressure transmitter",
