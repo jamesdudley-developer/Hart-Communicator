@@ -2,7 +2,7 @@
 (() => {
 'use strict';
 const $ = id => document.getElementById(id);
-const APP_VER = '4.8.0';
+const APP_VER = '4.8.1';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const hex = b => Array.from(b, x => x.toString(16).padStart(2,'0').toUpperCase()).join(' ');
 const hx = (n, w=2) => '0x' + n.toString(16).toUpperCase().padStart(w,'0');
@@ -1215,7 +1215,12 @@ function renderProfile(info){
 
 /* ================= Temperature sensor setup ================= */
 function snMsg(text, cls){ const n = $('snNote'); n.textContent = text; n.className = 'cfgnote ' + (cls || ''); n.classList.toggle('hidden', !text); }
-const snTemplate = () => prof?.profile.sensor ? P.templates.get(prof.profile.id, dev.devRev, isSim()) : null;
+// Built-in layout from the profile (real devices only; the simulator has its own layout), otherwise a learned one.
+const snTemplate = () => {
+  if (!prof?.profile.sensor) return null;
+  const b = !isSim() && prof.profile.sensorLayout?.[dev.devRev];
+  return b ? { ...b, profileId: prof.profile.id, devRev: dev.devRev } : P.templates.get(prof.profile.id, dev.devRev, isSim());
+};
 
 function renderSensor(){
   const card = $('snCard');
@@ -1250,13 +1255,13 @@ function renderSensor(){
   const t = snTemplate();
   const rows = [['Read command', p.sensor.read], ['Write command', p.sensor.write]];
   if (t){
-    rows.push(['Byte layout', t.source === 'capture' ? `Learned from a capture, ${new Date(t.savedAt).toLocaleDateString()}` : `Entered by hand, ${new Date(t.savedAt).toLocaleDateString()}`]);
+    rows.push(['Byte layout', t.source === 'builtin' ? 'Built in (Field Device Specification, confirmed on hardware)' : t.source === 'capture' ? `Learned from a capture, ${new Date(t.savedAt).toLocaleDateString()}` : `Entered by hand, ${new Date(t.savedAt).toLocaleDateString()}`]);
     rows.push(['Sensor type / wiring byte (write)', `${t.typeIdx} / ${t.connIdx ?? '—'}`]);
     if (t.readTypeIdx != null) rows.push(['Sensor type / wiring byte (read)', `${t.readTypeIdx} / ${t.readConnIdx ?? '—'}`]);
   } else rows.push(['Byte layout', 'Not set yet']);
   fillTable($('snInfo'), rows);
   $('snNoTpl').classList.toggle('hidden', !!t);
-  $('snTplClear').classList.toggle('hidden', !t);
+  $('snTplClear').classList.toggle('hidden', !t || t.source === 'builtin');
   $('snWrite').disabled = !t || !snRead;
   $('snPreview').disabled = !t || !snRead;
   renderSnRead();
@@ -1339,7 +1344,7 @@ async function writeSensor(){
     `Command ${p.sensor.write} data: ${hex(data)}`,
     'Changing the sensor type can reset the sensor trim, units and range. Check them afterwards.',
   ];
-  if (t.source !== 'capture') lines.push('This layout was entered by hand, not learned from a capture. Check the bytes against the FDS.');
+  if (t.source === 'manual') lines.push('This layout was entered by hand, not learned from a capture. Check the bytes against the FDS.');
   const r = await runWrite({ label:'Write sensor setup', n:p.sensor.write, data, output:true, lines,
     detail:`Sensor ${before} → ${P.sensorName(p, type)}.` });
   if (r){
@@ -1673,7 +1678,7 @@ log(`serial=${'serial' in navigator} usb=${'usb' in navigator} android=${isAndro
 /* ================= App shell: navigation, install, theme, offline ================= */
 (() => {
 'use strict';
-const APP_VERSION = '4.8.0'; // must match VERSION in sw.js
+const APP_VERSION = '4.8.1'; // must match VERSION in sw.js
 const $ = id => document.getElementById(id);
 
 // Navigation

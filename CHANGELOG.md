@@ -1,5 +1,10 @@
 # Changelog
 
+## 4.8.1
+
+- **Fix: reading the sensor setup on a Rosemount 644 (device revision 8).** Tools → Temperature sensor setup now has the 644's Command 140/141 layout built in (from the 644 Field Device Specification, confirmed on TIT406-2), so "Read" sends the sensor number and shows the sensor type and wiring straight away, with no learned layout needed. Writing uses the same layout. The simulator still uses its own practice layout.
+- The device report includes the 644's sensor type and wiring, and the Capture tab names the sensor type and connection in Commands 140 and 141.
+
 ## 4.8.0
 
 - **Sensor trim on the Rosemount 644 (device revision 8).** The 644 doesn't use the standard trim commands, so Configure → Sensor trim now uses its own commands from the 644 Field Device Specification (Commands 142 to 146), checked against a capture of AMS trimming TIT406-2. It shows the calibration mode (factory or user trim) and trim limits, sets User trim before the first point, trims the lower and upper points, waits for the device (up to 30 seconds) and reports if the device rejected the trim and returned to factory trim. "Restore factory sensor trim" sets the calibration mode back to Factory trim.
