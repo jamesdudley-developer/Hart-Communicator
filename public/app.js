@@ -811,7 +811,9 @@ async function checkSensorTrim(){
     try {
       const units = (await cmd(t.units, [t.sensor])).data[1];
       const i = await readCustomTrim(t, units);
-      st = { custom: t, dv: t.sensor, support: 3, units, mode: i.mode, minL: i.minL, maxL: i.maxL, minU: i.minL, maxU: i.maxL,
+      let latched = null;
+      if (t.latched){ try { latched = Array.from((await cmd(t.latched)).data); } catch(e){ log(e.message, 'er'); } }
+      st = { latched, custom: t, dv: t.sensor, support: 3, units, mode: i.mode, minL: i.minL, maxL: i.maxL, minU: i.minL, maxU: i.maxL,
              lastL: i.mode === 1 ? i.lower : NaN, lastU: i.mode === 1 ? i.upper : NaN, minDiff: NaN };
       renderSensorTrim();
       cfgMsg(`Sensor trim is available on this device (Commands ${t.info}–${t.units}). Currently using ${i.mode === 1 ? 'a user trim' : 'the factory trim'}.`, 'ok');
@@ -852,15 +854,30 @@ function renderSensorTrim(){
   $('stLowLbl').textContent = single ? 'Trim point' : 'Lower trim point';
   $('stLowBtn').textContent = single ? 'Trim' : 'Trim lower point';
   const rows = st.custom
-    ? [['Sensor', st.dv + 1], ['Calibration mode', st.mode === 1 ? 'User trim' : st.mode === 0 ? 'Factory trim' : `Code ${st.mode}`]]
+    ? [['Sensor', st.dv + 1], ['Calibration mode', st.mode === 1 ? 'User trim' : st.mode === 0 ? 'Factory trim' : `Code ${st.mode}`],
+       ...(st.latched ? [['Latched status', latchedText(st.latched)]] : [])]
     : [['Device variable', st.dv], ['Trim points', TRIM_SUPPORT[st.support] ?? `Code ${st.support}`]];
   if (hasLow) rows.push([single ? 'Allowed range' : 'Lower point allowed', `${fmt(st.minL)} to ${fmt(st.maxL)} ${u}`], ['Last ' + (single ? 'trim point' : 'lower point'), isFinite(st.lastL) ? `${fmt(st.lastL)} ${u}` : '—']);
   if (hasHigh) rows.push(['Upper point allowed', `${fmt(st.minU)} to ${fmt(st.maxU)} ${u}`], ['Last upper point', isFinite(st.lastU) ? `${fmt(st.lastU)} ${u}` : '—']);
   if (st.support === 3 && isFinite(st.minDiff)) rows.push(['Minimum difference between points', `${fmt(st.minDiff)} ${u}`]);
   fillTable($('stInfo'), rows);
+  $('stClear').classList.toggle('hidden', !(st.custom?.clearLatched && st.latched?.some(b => b)));
   if (hasLow && isFinite(st.lastL) && $('stLow').value === '') $('stLow').value = tidy(st.lastL);
   if (hasHigh && isFinite(st.lastU) && $('stHigh').value === '') $('stHigh').value = tidy(st.lastU);
   $('stBody').classList.remove('hidden');
+}
+// Command 178 latched status: same bit meanings as Command 48 bytes 0–4 (644 FDS section 7.3).
+const LATCHED_BITS = [[0,0,'Invalid configuration'],[0,1,'RAM failure'],[0,2,'ROM failure'],[0,3,'NV write failure'],[0,4,'Register failure'],[0,5,'ALU failure'],[0,6,'Static data failure'],[0,7,'NV failure'],
+  [1,0,'A/D receive failure'],[1,1,'A/D transmit failure'],[1,2,'A/D conversion failure'],[1,3,'A/D reference failure'],[1,4,'A/D interrupt failure'],[1,6,'A/D calibration failure'],
+  [2,0,'Hot Backup active'],[2,1,'Drift alert'],[2,2,'T/C resistance over threshold, sensor 1'],[2,3,'Excess sensor trim correction attempted'],[2,4,'Sensor trim failure'],[2,5,'T/C resistance over threshold, sensor 2'],[2,6,'Excess EMF, sensor 2'],[2,7,'Excess EMF, sensor 1'],
+  [3,0,'Electronics failure'],[3,2,'Operation failure'],[3,3,'Sensor failure'],[3,4,'Terminal temperature error'],[3,5,'LOI stuck button']];
+const latchedText = b => { const on = LATCHED_BITS.filter(([i, bit]) => b[i] & (1 << bit)).map(x => x[2]); return on.length ? on.join('; ') : 'None'; };
+async function clearLatched(){
+  if (!st?.custom?.clearLatched) return;
+  const r = await runWrite({ label:'Clear latched status', n:st.custom.clearLatched, refresh:false,
+    lines:[`Clears the recorded status history (Command ${st.custom.latched}): ${latchedText(st.latched)}.`, 'Live status is not affected. A condition that is still present will be latched again.'],
+    detail:`Cleared latched status: ${latchedText(st.latched)}.` });
+  if (r) await checkSensorTrim();
 }
 async function customTrim(point){
   const t = st.custom, low = point === 1, u = unitName(st.units);
@@ -998,6 +1015,7 @@ function bindWrites(){
   $('stLowBtn').onclick = () => sensorTrim(1);
   $('stHighBtn').onclick = () => sensorTrim(2);
   $('stReset').onclick = resetSensorTrim;
+  $('stClear').onclick = clearLatched;
   $('wZero').onclick = () => { const t = kindText(measKind().kind); runWrite({ label:'Zero PV', n:43, output:true,
     lines:t.zero, detail:`PV zeroed at the ${t.now.replace(/ right now$/, '')}.` }); };
   $('wSetLrv').onclick = () => { const t = kindText(measKind().kind); runWrite({ label:'Set LRV to applied', n:37, output:true,
