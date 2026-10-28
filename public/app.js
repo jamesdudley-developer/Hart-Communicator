@@ -2,7 +2,7 @@
 (() => {
 'use strict';
 const $ = id => document.getElementById(id);
-const APP_VER = '4.9.0';
+const APP_VER = '4.9.1';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const hex = b => Array.from(b, x => x.toString(16).padStart(2,'0').toUpperCase()).join(' ');
 const hx = (n, w=2) => '0x' + n.toString(16).toUpperCase().padStart(w,'0');
@@ -1708,7 +1708,7 @@ log(`serial=${'serial' in navigator} usb=${'usb' in navigator} android=${isAndro
 /* ================= App shell: navigation, install, theme, offline ================= */
 (() => {
 'use strict';
-const APP_VERSION = '4.9.0'; // must match VERSION in sw.js
+const APP_VERSION = '4.9.1'; // must match VERSION in sw.js
 const $ = id => document.getElementById(id);
 
 // Navigation
