@@ -1,12 +1,11 @@
 /* Device profiles: the device-specific layer above HART universal and common-practice commands.
-   Source: Rosemount HART Field Device Specifications (FDS) reviewed 2026-10-14
-   (project doc claude/fds-inventory.md). Only facts stated in those documents are recorded here.
-
-   Byte layouts of device-specific commands are NOT hard-coded. The FDS text that holds them is
-   not part of this app, and HART device-specific layouts must not be guessed. A layout becomes
-   usable only as a "template": learned from a capture of AMS (or another approved tool)
-   doing the change, or entered from the FDS by hand. Templates are stored per device type and
-   device revision on this device only. */
+   Sources, in order of preference where they overlap:
+   - captures of AMS checked against the AMS screens (captured),
+   - the manufacturer's device description extracted from its DTM installer (dd, data in dd-data.js),
+   - Rosemount HART Field Device Specifications (FDS) reviewed 2026-10-14 (project doc claude/fds-inventory.md).
+   HART device-specific layouts must not be guessed. Where none of these sources covers a device
+   revision, the sensor layout is a "template": learned from a capture of AMS doing the change, or
+   entered from the FDS by hand, stored per device type and device revision on this device only. */
 (() => {
 'use strict';
 
@@ -27,49 +26,107 @@ const SENSOR_TYPES = [
 const SENSOR_3144P_EXTRA = [[9, 'Special RTD / Ohms', 'rtd'], [142, 'Special TC / mV', 'tc']];
 const CONNECTIONS = [[2, '2-wire'], [3, '3-wire'], [4, '4-wire']];
 
+/* ---------- Device-specific commands from manufacturer device descriptions (dd-data.js) ----------
+   Extracted from Emerson DTM installers (the DD compiled into each DTM), see tools/dd-extract and the
+   project doc claude/dd-extraction-handoff.md. Each command carries its request and reply layouts. */
+const HCF_SPECIAL = { 250: 'Not used', 251: 'None', 252: 'Unknown', 253: 'Special' }; // HART common tables
+
+function ddField(f, d, enums) {
+  const H = window.HART;
+  const o = f.o, n = f.n;
+  const uint = () => { let v = 0; for (let i = 0; i < n; i++) v = v * 256 + d[o + i]; return v; };
+  switch (f.t) {
+    case 'f': return H.f32(d, o);
+    case 'F': return new DataView(Uint8Array.from(d.slice(o, o + 8)).buffer).getFloat64(0, false);
+    case 'u': return uint();
+    case 'i': { const v = uint(), m = 2 ** (8 * n); return v >= m / 2 ? v - m : v; }
+    case 'B': return (d[o] >> f.bit) & 1 ? 'On' : 'Off';
+    case 'e': {
+      const v = uint(), tab = enums[f.e] || {};
+      // Unit codes without their own table in the DD use the HART common units table.
+      if (!f.e && /unit/i.test(f.k) && H.unitName) return `${H.unitName(v)} (${v})`;
+      const t = tab[v] ?? HCF_SPECIAL[v];
+      return t != null ? `${t} (${v})` : `code ${v}`;
+    }
+    case 'b': {
+      const v = uint(), tab = enums[f.e] || {};
+      const on = Object.entries(tab).filter(([c]) => +c && (v & +c) === +c).map(([, l]) => l);
+      return on.length ? on.join(', ') : (v ? `bits ${H.toHex(d.slice(o, o + n))}` : 'None');
+    }
+    case 'p': return (H.packedAscii(d, o, n) || '').trim() || '(blank)';
+    case 'a': return String.fromCharCode(...d.slice(o, o + n).filter(b => b)).trim() || '(blank)';
+    case 'd': return `${d[o]}/${d[o + 1]}/${1900 + d[o + 2]}`;
+    default: return H.toHex(d.slice(o, o + n));
+  }
+}
+const fieldsLen = fs => fs.every(f => f.o != null && f.n) ? Math.max(0, ...fs.map(f => f.o + f.n)) : null;
+// Several transactions: use the one whose layout length matches the data, otherwise the first.
+const pickTr = (trs, side, len) => trs.find(t => t[side].length && fieldsLen(t[side]) === len) || trs.find(t => t[side].length) || null;
+function ddDecode(fields, d, enums) {
+  const out = {};
+  for (const f of fields) {
+    if (f.o == null || !f.n) { if (f.o != null && f.o < d.length) out[`${f.l} (raw)`] = window.HART.toHex(d.slice(f.o)); break; }
+    if (f.o + f.n > d.length) break;
+    let k = f.l; for (let i = 2; k in out; i++) k = `${f.l} (${i})`;
+    out[k] = ddField(f, d, enums);
+  }
+  const used = fieldsLen(fields);
+  if (used != null && d.length > used) out['Extra bytes (not in the DD)'] = window.HART.toHex(d.slice(used));
+  return out;
+}
+const ddHint = trs => trs.map(t => t.req.length
+  ? 'Request: ' + t.req.map(f => `${f.l} (${f.n ?? '?'} byte${f.n === 1 ? '' : 's'}${f.v != null ? `, always ${f.v.toString(16).padStart(2, '0').toUpperCase()}` : ''})`).join(', ')
+  : 'No request data').filter((v, i, a) => a.indexOf(v) === i).join(' or ');
+
+function ddCommands(key) {
+  const DD = window.HARTDD, dev = DD?.devices?.[key];
+  if (!dev) return {};
+  const out = {};
+  for (const [n, c] of Object.entries(dev.commands)) {
+    const hasReq = c.tr.some(t => t.req.length), hasRsp = c.tr.some(t => t.rsp.length);
+    out[n] = {
+      name: c.name, rw: c.rw, confidence: 'dd', source: 'dd', ddName: c.dd, ddSource: dev.source,
+      hint: ddHint(c.tr), layout: c.tr,
+      req: hasReq ? d => { const t = pickTr(c.tr, 'req', d.length); return t ? ddDecode(t.req, d, DD.enums) : null; } : undefined,
+      rsp: hasRsp ? d => { const t = pickTr(c.tr, 'rsp', d.length); return t ? ddDecode(t.rsp, d, DD.enums) : null; } : undefined,
+    };
+  }
+  return out;
+}
+
 /* Rosemount pressure transmitters, device-specific reads decoded from passive captures of AMS
    Device Configurator opening Device Information, checked field by field against the AMS screens.
-   Not from an FDS.
    - 3051C device revision 7 (HART 5): LT-405AA, final assembly 2169430, captured 20 Oct 2026.
    - 2088 device revision 9 (HART 5): PI-5102, model 2088G1S22A2S1B4I7Q4, captured 23 Oct 2026.
-   Commands 128, 142, 148, 160 and 162 have the same layout on both.
-   confidence: 'confirmed' = every value matched AMS; 'partial' = some bytes mapped; 'guess' = unmapped. */
-const HCF_SPECIAL = { 250: 'Not used', 251: 'None', 252: 'Unknown', 253: 'Special' }; // HART common tables
-const MATERIAL = { 2: '316 SST', 10: 'PTFE', ...HCF_SPECIAL };
-const FILL_FLUID = { 1: 'Silicone oil', ...HCF_SPECIAL };
-const SEAL_TYPE = { 3: 'EFW', 6: 'RTW', ...HCF_SPECIAL };
-const SEAL_COUNT = { 1: 'One seal', 2: 'Two seals', ...HCF_SPECIAL };
-const PROC_CONN = { 14: 'Remote seal', 44: '1/2 in NPTF', ...HCF_SPECIAL };
-const PROC_CONN_CONFIRMED = new Set([44]); // matched AMS on PI-5102; 14 seen once only
-
+   Commands 128, 142, 148, 160 and 162 have the same layout on both. Field names and code tables for
+   Commands 128 and 142 come from the Rosemount 2051 device description (device revision 10), whose
+   layout matches every byte confirmed in the captures (bytes 0-21 of Command 128). These revisions send
+   one more byte than the 2051 layout at the end of Command 128, so bytes 22-24 stay unconfirmed.
+   confidence: 'confirmed' = every value matched AMS; 'partial' = some bytes mapped; 'guess' = unmapped;
+   'dd' = from the manufacturer's device description, not yet checked on this exact revision. */
 function rmtPressureCaptured({ with139 = false } = {}) {
   const H = window.HART;
-  const code = (table, v) => v == null ? null : (v in table ? `${table[v]} (${v})` : `code ${v}`);
-  const unsure = v => v == null ? null : `${v} ?`;
   const model = n => d => ({ [`Model number ${n}`]: H.packedAscii(d, 0, 24) || '(blank)' });
+  const dd = ddCommands('2051r10');
+  const dd128 = dd[128]?.layout?.[0]?.rsp || [], dd142 = dd[142]?.layout?.[0]?.rsp || [];
   const cmds = {
     128: {
       name: 'Read materials of construction', rw: 'r', confidence: 'partial',
-      rsp: d => ({
-        '[0] Process connection': PROC_CONN_CONFIRMED.has(d[0]) ? code(PROC_CONN, d[0]) : unsure(code(PROC_CONN, d[0])),
-        '[1] Process connection material': code(MATERIAL, d[1]),
-        '[2] O-ring material': code(MATERIAL, d[2]),
-        '[3] Not yet identified': d[3],
-        '[4] Drain/vent material': code(MATERIAL, d[4]),
-        '[5] Remote seal type': code(SEAL_TYPE, d[5]),
-        '[6] Remote seal fill fluid': code(FILL_FLUID, d[6]),
-        '[7] Remote seal diaphragm': code(MATERIAL, d[7]),
-        '[8] Number of remote seals': unsure(code(SEAL_COUNT, d[8])),
-        '[9] Sensor fill fluid': unsure(code(FILL_FLUID, d[9])),
-        '[10] Isolator material': code(MATERIAL, d[10]),
-        '[12] Sensor range': d[12] == null ? null : `Range ${d[12]}`,
-        '[11, 13] Not yet identified (sensor type and configuration)': d.length >= 14 ? `${H.toHex([d[11], d[13]])}` : null,
-        '[14-24] Not yet identified': d.length > 14 ? H.toHex(d.slice(14)) : null,
-      }),
+      rsp: d => {
+        const out = {};
+        dd128.filter(f => f.o + f.n <= 22).forEach(f => { if (f.o + f.n <= d.length) out[`[${f.o}${f.n > 1 ? `-${f.o + f.n - 1}` : ''}] ${f.l}`] = ddField(f, d, window.HARTDD.enums); });
+        if (d.length > 22) out['[22-24] Not yet identified (local keys and configuration in the 2051 layout; this revision sends one more byte)'] = H.toHex(d.slice(22));
+        return out;
+      },
     },
     142: {
       name: 'Read alarm and saturation levels', rw: 'r', confidence: 'confirmed',
-      rsp: d => ({ 'High alarm (mA)': H.f32(d, 0), 'Low alarm (mA)': H.f32(d, 4), 'High saturation (mA)': H.f32(d, 8), 'Low saturation (mA)': H.f32(d, 12), '[16] Not yet identified': d[16] ?? null }),
+      rsp: d => {
+        const out = { 'High alarm (mA)': H.f32(d, 0), 'Low alarm (mA)': H.f32(d, 4), 'High saturation (mA)': H.f32(d, 8), 'Low saturation (mA)': H.f32(d, 12) };
+        const ty = dd142.find(f => f.o === 16);
+        if (d.length > 16) out['[16] Alarm/saturation type (from the 2051 DD)'] = ty ? ddField(ty, d, window.HARTDD.enums) : d[16];
+        return out;
+      },
     },
     148: { name: 'Read model number 1', rw: 'r', confidence: 'confirmed', rsp: model(1) },
     160: { name: 'Read model number 2', rw: 'r', confidence: 'confirmed', rsp: model(2) },
@@ -115,10 +172,13 @@ function rmt644r8() {
   };
 }
 
-// FDS commands plus any decoded from captures for this device revision.
-const commandsFor = (p, devRev) => ({ ...p.commands, ...(p.captured?.[devRev] || {}) });
-// Commands safe to send: FDS commands only when the FDS is genuine, plus capture-verified reads.
-const trustedCommands = (p, devRev) => p.suspect ? { ...(p.captured?.[devRev] || {}) } : commandsFor(p, devRev);
+// FDS commands, then the device description for this revision, then anything decoded from captures
+// (captures checked on hardware win where they overlap).
+const ddFor = (p, devRev) => (p.dd?.[devRev] ? ddCommands(p.dd[devRev]) : {});
+const commandsFor = (p, devRev) => ({ ...p.commands, ...ddFor(p, devRev), ...(p.captured?.[devRev] || {}) });
+// Commands safe to send: FDS commands only when the FDS is genuine, plus DD and capture-verified commands.
+const trustedCommands = (p, devRev) => p.suspect ? { ...ddFor(p, devRev), ...(p.captured?.[devRev] || {}) } : commandsFor(p, devRev);
+const ddSource = (p, devRev) => (p.dd?.[devRev] && window.HARTDD?.devices?.[p.dd[devRev]]?.source) || null;
 
 const sensorCommands = (read, write) => ({
   [read]: { name: 'Read sensor configuration (FDS)', rw: 'r' },
@@ -151,6 +211,14 @@ const PROFILES = [
     revisions: { 6: { hart: 7, documented: true }, 5: { hart: 5, documented: true } },
     sensor: { read: 140, write: 141, types: [...SENSOR_TYPES, ...SENSOR_3144P_EXTRA].sort((a, b) => a[0] - b[0]), connections: CONNECTIONS },
     commands: sensorCommands(140, 141),
+    // Device revision 5: every device-specific command from Emerson's 3144P DTM device description.
+    dd: { 5: '3144Pr5' },
+    // DD rev 5 Cmd 140/141: request [sensor number]; reply and write data [sensor number, sensor type, connection].
+    // Same layout as the 644 rev 8, which is confirmed on hardware.
+    sensorLayout: { 5: { readReq: [0], readTypeIdx: 1, readConnIdx: 2, mirror: true, writeBase: [], typeIdx: 1, connIdx: 2, source: 'dd' } },
+    // Same trim commands and layouts as the 644 rev 8 (142-146). Latched status (178) is left out of the trim
+    // panel because the 644 bit meanings aren't checked for the 3144P; the console decodes it from the DD.
+    trim: { revs: [5], sensor: 0, units: 146, info: 142, upper: 143, lower: 144, mode: 145 },
   },
   {
     id: 'rmt-648', model: 'Rosemount 648 Wireless', kind: 'temperature',
@@ -159,6 +227,17 @@ const PROFILES = [
     revisions: { 2: { hart: 7, documented: true } },
     sensor: { read: 154, write: 155, types: SENSOR_TYPES, connections: CONNECTIONS },
     commands: sensorCommands(154, 155),
+    dd: { 2: '648r2' },
+    // DTM rev 2 Cmd 154/155: request [02] (sensor 1 device variable); reply and write data [02, sensor type, connection].
+    sensorLayout: { 2: { readReq: [2], readTypeIdx: 1, readConnIdx: 2, mirror: true, writeBase: [], typeIdx: 1, connIdx: 2, source: 'dd' } },
+  },
+  {
+    id: 'rmt-775', model: 'Rosemount 775 THUM Adapter', kind: null,
+    manufacturerId: ROSEMOUNT, typeLow: 0x4F, expandedType: 0x264F,
+    fds: 'No FDS on hand. Device-specific commands come from Emerson\'s THUM Wireless DTM (device revision 1).',
+    revisions: { 1: { hart: 7, documented: true } },
+    sensor: null, commands: {},
+    dd: { 1: '775r1' },
   },
   {
     id: 'rmt-3051c', model: 'Rosemount 3051C', kind: 'pressure',
@@ -174,9 +253,11 @@ const PROFILES = [
   },
   {
     id: 'rmt-2051', model: 'Rosemount 2051', kind: 'pressure', suspect: true,
-    manufacturerId: ROSEMOUNT, typeLow: 0x55,
-    fds: 'The FDS on hand is a copy of the 3051C document with the model name and device type changed. Treat device-specific details as unverified.',
-    revisions: {}, sensor: null, commands: {},
+    manufacturerId: ROSEMOUNT, typeLow: 0x55, expandedType: 0x2655,
+    fds: 'The FDS on hand is a copy of the 3051C document with the model name and device type changed, so it is not used. Device revision 10 uses the device description from Emerson\'s 2051 DTM instead.',
+    revisions: { 10: { hart: 7, documented: true, note: 'Device revision 10: device-specific commands from the device description in Emerson\'s 2051 DTM (V10.02).' } },
+    sensor: null, commands: {},
+    dd: { 10: '2051r10' },
   },
   {
     id: 'rmt-2088', model: 'Rosemount 2088', kind: 'pressure', suspect: true,
@@ -231,5 +312,5 @@ function candidates(profile, bytes) {
   return out;
 }
 
-window.HARTProfiles = { PROFILES, SENSOR_TYPES, CONNECTIONS, match, commandsFor, trustedCommands, sensorName, connName, templates, candidates, hostTool };
+window.HARTProfiles = { PROFILES, SENSOR_TYPES, CONNECTIONS, match, commandsFor, trustedCommands, ddSource, ddCommands, sensorName, connName, templates, candidates, hostTool };
 })();

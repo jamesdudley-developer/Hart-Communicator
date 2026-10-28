@@ -157,7 +157,7 @@ function kv(obj) {
 function txRow(t) {
   const tags = [];
   if (t.layer === 'device' || t.layer === 'expanded') tags.push('<span class="tag dev">Device-specific</span>');
-  if (t.confidence) tags.push(`<span class="tag ${t.confidence === 'confirmed' ? 'ok' : 'guess'}">${{ confirmed: 'Decoded', partial: 'Partly decoded', guess: 'Unconfirmed' }[t.confidence]}</span>`);
+  if (t.confidence) tags.push(`<span class="tag ${t.confidence === 'confirmed' || t.confidence === 'dd' ? 'ok' : 'guess'}">${{ confirmed: 'Decoded', partial: 'Partly decoded', guess: 'Unconfirmed', dd: 'Decoded from DD' }[t.confidence]}</span>`);
   if (t.isWrite) tags.push(`<span class="tag wr">${t.writeCertainty === 'known' ? 'Write' : 'Likely write'}</span>`);
   if (t.causedConfigChange) tags.push('<span class="tag cfg">Set config-changed</span>');
   if (t.changedIdx) tags.push('<span class="tag chg">Value changed</span>');
