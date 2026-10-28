@@ -24,8 +24,8 @@
   --bar:#131E25; --track:#24333D; --log-bg:#0B1318; color-scheme:dark;
 }
 *,*::before,*::after{box-sizing:inherit}
-html{scroll-padding-top:calc(env(safe-area-inset-top,0px) + var(--appbar-h))}
-body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--font);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+html{overscroll-behavior-y:none;scroll-padding-top:calc(env(safe-area-inset-top,0px) + var(--appbar-h))}
+body{margin:0;overscroll-behavior-y:none;background:var(--bg);color:var(--ink);font:15px/1.5 var(--font);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 .hidden{display:none !important}
 h2{font-size:1.02rem;font-weight:600;margin:0 0 12px;letter-spacing:-.005em}
 svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}

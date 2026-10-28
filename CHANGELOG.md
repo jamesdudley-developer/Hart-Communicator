@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.9.1
+
+- **Pull-down refresh is off.** Swiping down at the top of the page no longer reloads the app on Android Chrome or the installed app, so a stray swipe can't drop the modem connection mid-read or mid-write. Uses CSS `overscroll-behavior-y: none` on the page. The browser's reload button still works.
+
 ## 4.9.0
 
 - **Device-specific commands from Emerson's own device descriptions (DDs).** The DD inside each Emerson DTM installer was extracted and every device-specific command (128 to 253) built into the app with its request and reply layout and code tables. The new data is in `dd-data.js`:
