@@ -1,5 +1,18 @@
 # Changelog
 
+## 4.9.0
+
+- **Device-specific commands from Emerson's own device descriptions (DDs).** The DD inside each Emerson DTM installer was extracted and every device-specific command (128 to 253) built into the app with its request and reply layout and code tables. The new data is in `dd-data.js`:
+  - **Rosemount 2051, device revision 10** (2051 DTM V10.02): 47 commands, including model numbers 1–3 (148, 160, 162), materials and static data (128), and alarm and saturation levels (142). The fake 2051 FDS is no longer needed for this revision.
+  - **Rosemount 3144P, device revision 5** (HART 5): 43 commands. **Sensor setup (140/141) and sensor trim (142–146)** now work without learning a layout, using the same layout as the 644.
+  - **Rosemount 648 Wireless, device revision 2**: 35 commands, including model string (148), sensor setup (154/155, built in), battery and transmitter information.
+  - **Rosemount 775 THUM adapter, device revision 1** (new profile): 20 commands, including model string, configuration errors and transmitter information.
+- **3051 rev 7 and 2088 rev 9:** Command 128 now names every byte from 0 to 21 using the 2051 DD (meter, number of seals, sensor fill, measurement type, trim units and both calibration points). Command 142's last byte is the alarm/saturation type (Standard or User specified).
+- The **console** now lists and decodes the commands for the connected device's exact revision, and shows the request data a DD command expects.
+- The Capture tab tags these decodes "Decoded from DD". The device report names the DD as the source for model codes, materials and alarm levels it read this way.
+- The **5408 package** supplied was the FOUNDATION Fieldbus version, so it has no HART commands. Nothing was added for the 5408.
+- The extraction scripts are in `tools/dd-extract`.
+
 ## 4.8.1
 
 - **Fix: reading the sensor setup on a Rosemount 644 (device revision 8).** Tools → Temperature sensor setup now has the 644's Command 140/141 layout built in (from the 644 Field Device Specification, confirmed on TIT406-2), so "Read" sends the sensor number and shows the sensor type and wiring straight away, with no learned layout needed. Writing uses the same layout. The simulator still uses its own practice layout.
