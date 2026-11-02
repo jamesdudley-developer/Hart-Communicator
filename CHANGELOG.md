@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.9.2
+
+- **Rosemount 3144P device revision 3 (HART 5) support.** Decoded from a passive capture of AMS Device Configurator on TE-653 (rev 3, HART 5, Nov 2026) and cross-checked against the AMS screens. Rev 3 is older than the FDS on hand (FDS Rev 6 covers revisions 5–6). Changes:
+  - **Sensor setup (Cmd 140/141) unlocked** for rev 3. The layout is the same as rev 5 (sensor number, type, connection), confirmed in the capture.
+  - **Sensor trim panel** now available for rev 3 (trim commands 142–146, same as rev 5; FDS Rev 6-documented).
+  - **Console decodes** for rev 3: sensor config (140/141), trim units (146), LCD display and write (152/153), Suspend Non-PV Alarm Mode (160), and sensor drift alert options (196). Byte 2 of Cmd 196's response is the 'Historical Byte (for backward compatibility only)' documented in FDS Rev 6 and confirmed by the device sending `00` there.
+
 ## 4.9.1
 
 - **Pull-down refresh is off.** Swiping down at the top of the page no longer reloads the app on Android Chrome or the installed app, so a stray swipe can't drop the modem connection mid-read or mid-write. Uses CSS `overscroll-behavior-y: none` on the page. The browser's reload button still works.
