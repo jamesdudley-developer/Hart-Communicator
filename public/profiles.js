@@ -172,6 +172,76 @@ function rmt644r8() {
   };
 }
 
+/* 3144P device revision 3 (HART 5): decoded from a passive capture of AMS Device Configurator
+   on TE-653 (Rosemount 3144P, device revision 3, HART 5, Nov 2026), checked against AMS screens.
+   Device revision 3 is older than the FDS on hand (FDS Rev 6 covers revisions 5–6).
+   Cmd 196 byte 2 is the 'Historical Byte (for backward compatibility only)' documented in FDS Rev 6.
+   Commands 142, 143, 144, 145 and 160 are FDS Rev 6-documented; not exercised in this capture. */
+function rmt3144pr3() {
+  const H = window.HART;
+  const CAL = { 0: 'Factory trim', 1: 'User trim' };
+  const LCD_DISPLAY = {
+    2: 'PV (Engineering Units)', 3: 'PV (Percent of Range)',
+    5: 'Alternate mA Output / PV Engineering Units', 6: 'mA Output',
+    7: 'Sensor 1 (Engineering Units)', 8: 'Sensor 2 (Engineering Units)',
+    9: 'Alternate Sensor 1 / Sensor 2 (Engineering Units)',
+    10: 'Differential Temperature (Engineering Units)',
+    11: 'Alternate Sensor 1 / Sensor 2 / Differential Temperature (Engineering Units)',
+    12: 'Average Temperature (Engineering Units)',
+    13: 'Alternate Sensor 1 / Sensor 2 / Average Temperature (Engineering Units)',
+    14: 'Alternate Sensor 1 / Terminal Temperature / Analog Output',
+    15: 'Alternate Sensor 1 / Sensor 2 / Analog Output',
+    16: 'Alternate Sensor 1 / Sensor 2 / Differential Temperature / Analog Output',
+    17: 'Alternate Sensor 1 / Sensor 2 / Average Temperature / Analog Output',
+    18: 'Alternate between all dynamic device variables',
+    19: 'Alternate PV / Min Tracking Value 1 / Max Tracking Value 1',
+    20: 'Alternate PV / Min Tracking Value 2 / Max Tracking Value 2',
+    21: 'Alternate PV / Min Tracking Value 3 / Max Tracking Value 3',
+    22: 'Alternate PV / Min Tracking Value 4 / Max Tracking Value 4',
+    250: 'Not used',
+  };
+  const LCD_DP = { 0: 'Floating', 1: '1 digit', 2: '2 digits', 3: '3 digits', 4: '4 digits', 250: 'Not used' };
+  const DRIFT_OPT = { 0: 'Warning', 1: 'Alarm', 2: 'Disabled', 250: 'Not used' };
+  const SUSPEND = { 0: 'Disabled', 1: 'Historical (PV only)', 2: 'Enabled (PV only)', 250: 'Not used' };
+  const sensorRsp = d => ({
+    sensor: d[0] + 1,
+    'Sensor type': d[1] === 250 ? 'Not used' : sensorName(PROFILES.find(p => p.id === 'rmt-3144p'), d[1]),
+    Connection: d[2] === 250 ? 'Not used' : connName(d[2]),
+  });
+  return {
+    140: { name: 'Read sensor configuration', rw: 'r', confidence: 'confirmed',
+           req: d => ({ sensor: d[0] + 1 }), rsp: sensorRsp },
+    141: { name: 'Write sensor configuration', rw: 'w', confidence: 'confirmed', req: sensorRsp },
+    142: { name: 'Read sensor trim information', rw: 'r', confidence: 'partial',
+           req: d => ({ sensor: d[0], units: d[1] }),
+           rsp: d => ({ sensor: d[0], units: d[1], 'Calibration mode': CAL[d[2]] ?? d[2],
+             'Upper trim limit': H.f32(d, 3), 'Lower trim limit': H.f32(d, 7),
+             'Upper trim value': H.f32(d, 11), 'Lower trim value': H.f32(d, 15) }) },
+    143: { name: 'Perform sensor trim upper', rw: 'w', confidence: 'partial',
+           req: d => ({ sensor: d[0], units: d[1], value: H.f32(d, 2) }) },
+    144: { name: 'Perform sensor trim lower', rw: 'w', confidence: 'partial',
+           req: d => ({ sensor: d[0], units: d[1], value: H.f32(d, 2) }) },
+    145: { name: 'Write calibration mode', rw: 'w', confidence: 'partial',
+           req: d => ({ sensor: d[0], mode: CAL[d[1]] ?? d[1] }) },
+    146: { name: 'Read trim units', rw: 'r', confidence: 'confirmed',
+           req: d => ({ sensor: d[0] }), rsp: d => ({ sensor: d[0], units: d[1] }) },
+    152: { name: 'Read LCD configuration', rw: 'r', confidence: 'confirmed',
+           rsp: d => ({ 'LCD display': LCD_DISPLAY[d[0]] ?? `Code ${d[0]}`,
+             'Decimal point': LCD_DP[d[1]] ?? `Code ${d[1]}`,
+             'Bar graph': d[2] === 0 ? 'Disabled' : d[2] === 1 ? 'Enabled' : `Code ${d[2]}` }) },
+    153: { name: 'Write LCD configuration', rw: 'w', confidence: 'confirmed',
+           req: d => ({ 'LCD display': LCD_DISPLAY[d[0]] ?? `Code ${d[0]}`,
+             'Decimal point': LCD_DP[d[1]] ?? `Code ${d[1]}`,
+             'Bar graph': d[2] === 0 ? 'Disabled' : d[2] === 1 ? 'Enabled' : `Code ${d[2]}` }) },
+    160: { name: 'Read Suspend Non-PV Alarm Mode', rw: 'r', confidence: 'partial',
+           rsp: d => ({ 'Suspend Non-PV Alarm': SUSPEND[d[0]] ?? d[0] }) },
+    196: { name: 'Read sensor drift alert options', rw: 'r', confidence: 'confirmed',
+           req: d => ({ units: d[0] }),
+           rsp: d => ({ units: d[0], 'Drift alert': DRIFT_OPT[d[1]] ?? d[1],
+             'Drift limit': H.f32(d, 3), 'Drift damping (s)': H.f32(d, 7) }) },
+  };
+}
+
 // FDS commands, then the device description for this revision, then anything decoded from captures
 // (captures checked on hardware win where they overlap).
 const ddFor = (p, devRev) => (p.dd?.[devRev] ? ddCommands(p.dd[devRev]) : {});
@@ -208,17 +278,18 @@ const PROFILES = [
     id: 'rmt-3144p', model: 'Rosemount 3144P', kind: 'temperature',
     manufacturerId: ROSEMOUNT, typeLow: 0x19, expandedType: 0x2619,
     fds: 'FDS revision 6 (H7D): HART 7.2, device revision 6. Command 17 "HART5" switches to device revision 5.',
-    revisions: { 6: { hart: 7, documented: true }, 5: { hart: 5, documented: true } },
+    revisions: { 6: { hart: 7, documented: true }, 5: { hart: 5, documented: true }, 3: { hart: 5, documented: false, note: 'Device revision 3 (HART 5): older than the FDS on hand (FDS Rev 6 covers revisions 5–6). Sensor setup and display config confirmed from a capture of AMS on TE-653, Nov 2026.' } },
     sensor: { read: 140, write: 141, types: [...SENSOR_TYPES, ...SENSOR_3144P_EXTRA].sort((a, b) => a[0] - b[0]), connections: CONNECTIONS },
     commands: sensorCommands(140, 141),
     // Device revision 5: every device-specific command from Emerson's 3144P DTM device description.
     dd: { 5: '3144Pr5' },
     // DD rev 5 Cmd 140/141: request [sensor number]; reply and write data [sensor number, sensor type, connection].
     // Same layout as the 644 rev 8, which is confirmed on hardware.
-    sensorLayout: { 5: { readReq: [0], readTypeIdx: 1, readConnIdx: 2, mirror: true, writeBase: [], typeIdx: 1, connIdx: 2, source: 'dd' } },
+    sensorLayout: { 5: { readReq: [0], readTypeIdx: 1, readConnIdx: 2, mirror: true, writeBase: [], typeIdx: 1, connIdx: 2, source: 'dd' }, 3: { readReq: [0], readTypeIdx: 1, readConnIdx: 2, mirror: true, writeBase: [], typeIdx: 1, connIdx: 2, source: 'builtin' } },
     // Same trim commands and layouts as the 644 rev 8 (142-146). Latched status (178) is left out of the trim
     // panel because the 644 bit meanings aren't checked for the 3144P; the console decodes it from the DD.
-    trim: { revs: [5], sensor: 0, units: 146, info: 142, upper: 143, lower: 144, mode: 145 },
+    trim: { revs: [3, 5], sensor: 0, units: 146, info: 142, upper: 143, lower: 144, mode: 145 },
+    captured: { 3: rmt3144pr3() },
   },
   {
     id: 'rmt-648', model: 'Rosemount 648 Wireless', kind: 'temperature',
