@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.9.3
+
+- **Rosemount 2051 device revision 9 (HART 5) support.** Decoded from a passive capture of AMS Device Configurator on PT-5001 (rev 9, HART 5, Nov 2026) and checked field by field against the AMS screens. Changes:
+  - **Console decodes** for rev 9: model numbers 1–3 (Commands 148, 160, 162), materials of construction (Command 128, same layout as the 3051C rev 7 and 2088 rev 9), alarm and saturation levels in mA (Command 142), and scaled offset / SV linear offset (Command 184). Command 184's layout comes from the Rosemount 2051 device description (V10.02 DD): byte 0 is the pressure unit (kPa = 12, matching Cmd 15) and bytes 1–4 are the SV linear offset (0.0 on this device).
+  - **Serial number label.** AMS shows the Command 16 final assembly number (3523097) as the transmitter Serial Number, same as the 2088. The Device tab and report now label it "Serial number (final assembly)" on 2051 devices.
+
 ## 4.9.2
 
 - **Rosemount 3144P device revision 3 (HART 5) support.** Decoded from a passive capture of AMS Device Configurator on TE-653 (rev 3, HART 5, Nov 2026) and cross-checked against the AMS screens. Rev 3 is older than the FDS on hand (FDS Rev 6 covers revisions 5–6). Changes:

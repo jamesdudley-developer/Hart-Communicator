@@ -242,6 +242,29 @@ function rmt3144pr3() {
   };
 }
 
+/* 2051 device revision 9 (HART 5): decoded from a passive capture of AMS Device Configurator
+   on PT-5001 (Rosemount 2051, device revision 9, HART 5, Nov 2026), checked against AMS screens.
+   Commands 128, 142, 148, 160 and 162 match the 3051C rev 7 and 2088 rev 9 layouts exactly.
+   Cmd 184 (Read scaled offset) confirmed from the 2051r10 DD: byte 0 is the pressure unit
+   (0x0C = kPa, matching Cmd 15's rangeUnit), bytes 1–4 are the SV linear offset (0.0 = not set).
+   AMS shows Cmd 16 (final assembly number) as the transmitter "Serial Number" (PT-5001: 3523097). */
+function rmt2051r9() {
+  const H = window.HART;
+  return {
+    ...rmtPressureCaptured(),
+    184: {
+      name: 'Read scaled offset', rw: 'r', confidence: 'confirmed',
+      rsp: d => {
+        const pu = window.HARTDD?.enums?.['2051r10:pressure_units']?.[d[0]];
+        return {
+          'Pressure units': pu != null ? `${pu} (${d[0]})` : `code ${d[0]}`,
+          'SV linear offset': H.f32(d, 1),
+        };
+      },
+    },
+  };
+}
+
 // FDS commands, then the device description for this revision, then anything decoded from captures
 // (captures checked on hardware win where they overlap).
 const ddFor = (p, devRev) => (p.dd?.[devRev] ? ddCommands(p.dd[devRev]) : {});
@@ -326,9 +349,15 @@ const PROFILES = [
     id: 'rmt-2051', model: 'Rosemount 2051', kind: 'pressure', suspect: true,
     manufacturerId: ROSEMOUNT, typeLow: 0x55, expandedType: 0x2655,
     fds: 'The FDS on hand is a copy of the 3051C document with the model name and device type changed, so it is not used. Device revision 10 uses the device description from Emerson\'s 2051 DTM instead.',
-    revisions: { 10: { hart: 7, documented: true, note: 'Device revision 10: device-specific commands from the device description in Emerson\'s 2051 DTM (V10.02).' } },
+    revisions: {
+      10: { hart: 7, documented: true, note: 'Device revision 10: device-specific commands from the device description in Emerson\'s 2051 DTM (V10.02).' },
+      9: { hart: 5, documented: false, note: 'Device revision 9 (HART 5): model numbers, materials, alarm levels and scaled offset decoded from a capture of AMS on PT-5001 (Nov 2026) and checked against the AMS screens.' },
+    },
     sensor: null, commands: {},
     dd: { 10: '2051r10' },
+    captured: { 9: rmt2051r9() },
+    // AMS shows Command 16 (final assembly number) as the transmitter "Serial Number" (PT-5001: 3523097).
+    finalAssemblyIsSerial: true,
   },
   {
     id: 'rmt-2088', model: 'Rosemount 2088', kind: 'pressure', suspect: true,
