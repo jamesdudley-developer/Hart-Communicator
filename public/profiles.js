@@ -265,6 +265,44 @@ function rmt2051r9() {
   };
 }
 
+/* Endress+Hauser Micropilot FMR240, device revision 5 (HART 5, manufacturer 0x11, device type 0x1E):
+   decoded from a capture of an Emerson 475 Field Communicator on "TANK 1" (device ID 1725362), 12 Nov 2026.
+   Command 172 is an indexed parameter read: the request is a 2-byte parameter index and the reply
+   echoes the index followed by a 1-, 2- or 4-byte value. Only the indexes below are named:
+   - 0x002D empty calibration (10.096 m) and 0x003E full calibration (9.745 m): matched the 475 screen.
+   - 0x0019 (45 = metres) and 0x0055 (70.0) match the unit and upper sensor limit in universal Command 14
+     of the same capture, but were not checked against a 475 screen.
+   Every other index is shown raw. No write command has been captured, so none is defined. */
+function ehFmr240r5() {
+  const H = window.HART;
+  const num = v => +v.toPrecision(7);
+  const PARAMS = {
+    0x002D: { name: 'Empty calibration (m)', confirmed: true, val: d => num(H.f32(d, 2)), len: 4 },
+    0x003E: { name: 'Full calibration (m)', confirmed: true, val: d => num(H.f32(d, 2)), len: 4 },
+    0x0019: { name: 'Distance unit (matches Command 14, not checked on the 475)', val: d => `${H.unitName(d[2])} (${d[2]})`, len: 1 },
+    0x0055: { name: 'Maximum range (m) (matches Command 14 upper limit, not checked on the 475)', val: d => num(H.f32(d, 2)), len: 4 },
+  };
+  const idx = d => (d[0] << 8) | d[1];
+  const hex4 = n => '0x' + n.toString(16).toUpperCase().padStart(4, '0');
+  return {
+    172: {
+      name: 'Read parameter by index', rw: 'r', confidence: 'partial',
+      req: d => { const p = PARAMS[idx(d)]; return { 'Parameter index': hex4(idx(d)), Parameter: p ? p.name : 'Not yet identified' }; },
+      rsp: d => {
+        if (d.length < 3) return { raw: H.toHex(d) };
+        const i = idx(d), p = PARAMS[i], v = d.slice(2), out = { 'Parameter index': hex4(i) };
+        if (p && v.length === p.len) { out[p.name] = p.val(d); if (p.confirmed) out.Checked = 'Matched the 475 Field Communicator screen'; return out; }
+        out['Value (raw)'] = H.toHex(v);
+        if (v.length === 1) out['As a number'] = v[0];
+        else if (v.length === 2) out['As a 16-bit number'] = (v[0] << 8) | v[1];
+        else if (v.length === 4) out['As a float (if it is one)'] = num(H.f32(d, 2));
+        out.Parameter = 'Not yet identified';
+        return out;
+      },
+    },
+  };
+}
+
 // FDS commands, then the device description for this revision, then anything decoded from captures
 // (captures checked on hardware win where they overlap).
 const ddFor = (p, devRev) => (p.dd?.[devRev] ? ddCommands(p.dd[devRev]) : {});
@@ -369,6 +407,14 @@ const PROFILES = [
     captured: { 9: rmtPressureCaptured() },
     // AMS shows Command 16 (final assembly number) as the transmitter "Serial Number" (PI-5102: 3577792).
     finalAssemblyIsSerial: true,
+  },
+  {
+    id: 'eh-fmr240', model: 'Endress+Hauser Micropilot FMR240', kind: 'level',
+    manufacturerId: 0x11, typeLow: 0x1E,
+    fds: 'No Field Device Specification on hand. Command 172 (read parameter by index) was decoded from a capture of a 475 Field Communicator, device revision 5.',
+    revisions: { 5: { hart: 5, documented: false, note: 'Device revision 5: empty and full calibration (Command 172) were decoded from a capture of a 475 Field Communicator and checked against its screen. Other Command 172 parameters are shown raw. No device-specific writes are defined.' } },
+    sensor: null, commands: {},
+    captured: { 5: ehFmr240r5() },
   },
 ];
 

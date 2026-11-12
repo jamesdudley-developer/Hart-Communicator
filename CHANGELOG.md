@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.10.0
+
+- **Endress+Hauser Micropilot FMR240, device revision 5 (HART 5): new profile.** Decoded from a capture of an Emerson 475 Field Communicator on TANK 1 (12 Nov 2026).
+  - **Command 172 is a read-by-index command.** The request is a 2-byte parameter index; the reply repeats the index, then the value (1, 2 or 4 bytes). The Capture tab and console now show the index and, where known, the parameter name.
+  - **Empty calibration (index 0x002D) and full calibration (index 0x003E)** decode as metres. Both matched the 475 screen (10.096 m and 9.745 m).
+  - **Distance unit (0x0019) and maximum range (0x0055)** are named because they match universal Command 14 in the same capture; they were not checked on the 475 screen and are labelled that way.
+  - The Capture tab now names the length units (m, cm, mm, ft, in) in universal commands, so Command 14 shows "m" where it showed "unit 45".
+  - Every other index is shown raw with its value as a number, marked "Not yet identified". No write command is defined for this device.
+
 ## 4.9.3
 
 - **Rosemount 2051 device revision 9 (HART 5) support.** Decoded from a passive capture of AMS Device Configurator on PT-5001 (rev 9, HART 5, Nov 2026) and checked field by field against the AMS screens. Changes:
