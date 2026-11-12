@@ -72,6 +72,7 @@ function floatLens(bytes) {
 const UNITS = {
   1: 'inH2O@68°F', 2: 'inHg', 3: 'ftH2O', 4: 'mmH2O', 5: 'mmHg', 6: 'psi', 7: 'bar',
   8: 'mbar', 9: 'g/cm²', 10: 'kg/cm²', 11: 'Pa', 12: 'kPa', 13: 'torr', 14: 'atm',
+  44: 'ft', 45: 'm', 47: 'in', 48: 'cm', 49: 'mm',
   32: '°C', 33: '°F', 34: '°R', 35: 'K', 36: 'mV', 37: 'Ω', 39: 'mA', 57: '%', 58: 'V',
   237: 'MPa', 238: 'inH2O@4°C', 239: 'mmH2O@4°C', 250: 'not used', 251: 'none',
 };
