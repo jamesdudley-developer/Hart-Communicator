@@ -194,6 +194,18 @@
       <ul class="dvlist" id="dvList"></ul>
     </div>
   </section>
+  <section class="panel hidden" id="vsCard">
+    <h2>Variable scan</h2>
+    <p class="hint">Asks the device for each variable code in turn with HART Command 33 (read device variables), a read-only common-practice command. It works on HART 5 devices and needs no device profile. The device gives a value and a unit for each code it supports; the names are only in the manufacturer's DD, so compare the values with what you know about the device.</p>
+    <div class="btns">
+      <button id="vsScan">Scan codes 0–31</button>
+      <button id="vsAll">Scan all codes (0–249)</button>
+      <button id="vsRefresh" disabled>Read again</button>
+      <button id="vsStop" class="hidden">Stop</button>
+    </div>
+    <p class="hint" id="vsHint" style="margin-top:8px"></p>
+    <ul class="dvlist" id="vsList"></ul>
+  </section>
 </section>
 
 <!-- ================= CONFIGURE ================= -->
