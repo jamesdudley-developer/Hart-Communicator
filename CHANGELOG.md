@@ -1,5 +1,9 @@
 # Changelog
 
+## 4.10.1
+
+- **Variable scan (Variables tab).** Works on any HART device, including HART 5 devices and devices with no profile. The app asks for each variable code in turn with common-practice Command 33 (read device variables, read-only) and lists every code the device answers, with its value and unit. **Scan codes 0–31** is the quick pass; **Scan all codes (0–249)** takes a few minutes at HART speed and can be stopped. **Read again** re-reads the codes found and marks the ones whose value changed, which separates live measurements from fixed values. Codes mapped to PV, SV, TV or QV are tagged when the device answers Command 50. Names aren't shown because they exist only in the manufacturer's DD. The simulator answers Command 33 for practice.
+
 ## 4.10.0
 
 - **Endress+Hauser Micropilot FMR240, device revision 5 (HART 5): new profile.** Decoded from a capture of an Emerson 475 Field Communicator on TANK 1 (12 Nov 2026).

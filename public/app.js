@@ -349,6 +349,7 @@ function renderDevice(info, det){
   fillForms(det);
   renderDevice2();
   $('dvCard').classList.remove('hidden');
+  $('vsCard').classList.remove('hidden');
   $('rptCard').classList.remove('hidden');
 }
 
@@ -479,7 +480,7 @@ async function connectDevice(poll){
   $('scanList').innerHTML = '';
   dev = null; lastDeviceStatus = null; cmd48Data = null; st = null; $('stBody').classList.add('hidden');
   prof = null; snRead = null; ['profCard','snCard','conCard','rptCard'].forEach(id => $(id).classList.add('hidden')); $('snBytes').classList.add('hidden'); $('conResult').classList.add('hidden');
-  dvList = null; dvMap = null; $('dvBody').classList.add('hidden'); $('dvList').innerHTML = ''; $('dvLoad').textContent = 'Load';
+  dvList = null; dvMap = null; $('dvBody').classList.add('hidden'); $('dvList').innerHTML = ''; $('dvLoad').textContent = 'Load'; resetVarScan();
   $('dvHint').textContent = 'Reads every device variable with its type, live value, status and limits (HART Commands 9, 50 and 54).';
   setPill('Reading device…', 'busy');
   document.body.classList.remove('has-device');
@@ -546,7 +547,7 @@ async function disconnect(){
   document.body.classList.remove('has-device');
   $('barDevice').textContent = 'No device';
   $('btnConnect').disabled = false; $('btnScan').disabled = true; $('btnDisc').disabled = true;
-  ['liveCard','statusCard','devCard','rangeCard','cfgCard','dvCard','profCard','snCard','conCard'].forEach(id => $(id).classList.add('hidden'));
+  ['liveCard','statusCard','devCard','rangeCard','cfgCard','dvCard','profCard','snCard','conCard','vsCard'].forEach(id => $(id).classList.add('hidden'));
   prof = null; snRead = null;
   $('scanList').innerHTML = '';
   note('Disconnected.');
@@ -824,7 +825,7 @@ async function checkSensorTrim(){
   setCfgBusy(true);
   cfgMsg('Checking sensor trim support…', '');
   st = null; $('stBody').classList.add('hidden');
-  dvList = null; dvMap = null; $('dvBody').classList.add('hidden'); $('dvList').innerHTML = ''; $('dvLoad').textContent = 'Load';
+  dvList = null; dvMap = null; $('dvBody').classList.add('hidden'); $('dvList').innerHTML = ''; $('dvLoad').textContent = 'Load'; resetVarScan();
   $('dvHint').textContent = 'Reads every device variable with its type, live value, status and limits (HART Commands 9, 50 and 54).';
   try {
     let pvDv = 0;
@@ -1010,6 +1011,10 @@ function bindWrites(){
   $('tr5').onclick = exitLoop;
 
   $('dvLoad').onclick = loadDeviceVariables;
+  $('vsScan').onclick = () => scanVariables(31);
+  $('vsAll').onclick = () => scanVariables(249);
+  $('vsRefresh').onclick = refreshVarScan;
+  $('vsStop').onclick = () => { vsStop = true; };
   $('dmWrite').onclick = writeDvMapping;
   $('stCheck').onclick = checkSensorTrim;
   $('stLowBtn').onclick = () => sensorTrim(1);
@@ -1105,6 +1110,92 @@ async function loadDeviceVariables(){
   }
   $('dvLoad').disabled = false; setCfgBusy(false);
   if (wasLive){ live = true; liveLoop(); }
+}
+
+/* ---------- Variable scan (Command 33) ----------
+   HART common-practice Command 33, Read Device Variables (HCF_SPEC-151): the request holds up to four
+   device variable codes; the reply gives, for each one, the code, its unit code and a float value
+   (6 bytes per slot). HART 5 devices expect all four slots, so one code is sent four times.
+   Response code 2 (invalid selection) means the device has no variable with that code. Read-only. */
+let vsFound = [], vsStop = false, vsBusy = false, vsMap = null;
+
+function resetVarScan(){
+  vsFound = []; vsMap = null; vsStop = true;
+  $('vsList').innerHTML = ''; $('vsHint').textContent = ''; $('vsRefresh').disabled = true;
+}
+
+const vsValue = v => isFinite(v.value) ? `${fmt(v.value)} ${unitName(v.units)}` : 'No value';
+
+function renderVarScan(){
+  const ul = $('vsList'); ul.innerHTML = '';
+  vsFound.forEach(v => {
+    const li = document.createElement('li'); li.className = v.changed ? 'uncertain' : '';
+    li.innerHTML = '<div class="dvtop"><span class="dvname"></span><span class="dvval"></span></div><div class="dvstat"></div>';
+    const nm = li.querySelector('.dvname'); nm.textContent = `Code ${v.code}`;
+    (vsMap ? vsMap.map((c, i) => c === v.code ? SLOT[i] : null).filter(Boolean) : []).forEach(m => {
+      const b = document.createElement('span'); b.className = 'dvmap'; b.textContent = m; nm.appendChild(b); });
+    li.querySelector('.dvval').textContent = vsValue(v);
+    li.querySelector('.dvstat').textContent = [`Unit code ${v.units}`,
+      v.changed ? `Changed since the last read (was ${v.was})` : v.reads > 1 ? 'Same as the last read' : ''].filter(Boolean).join(' · ');
+    ul.appendChild(li);
+  });
+}
+
+async function vsPause(run){
+  if (!dev || cfgBusy || vsBusy) return;
+  vsBusy = true; vsStop = false; setCfgBusy(true);
+  ['vsScan','vsAll','vsRefresh'].forEach(id => $(id).disabled = true);
+  $('vsStop').classList.remove('hidden');
+  const wasLive = live; live = false;
+  while (liveRunning) await sleep(50);
+  try { await run(); } catch(e){ $('vsHint').textContent = e.message.replace(/^Command \d+: /,''); }
+  $('vsStop').classList.add('hidden');
+  ['vsScan','vsAll'].forEach(id => $(id).disabled = false);
+  $('vsRefresh').disabled = !vsFound.length;
+  vsBusy = false; setCfgBusy(false);
+  if (wasLive && dev){ live = true; liveLoop(); }
+}
+
+function scanVariables(last){
+  return vsPause(async () => {
+    vsFound = []; renderVarScan();
+    try { const r = await cmd(50, [], { raw:true, quiet:true }); vsMap = r.status[0] === 0 && r.data.length >= 4 ? Array.from(r.data.slice(0,4)) : null; } catch { vsMap = null; }
+    let empty = 0, fails = 0, done = 0;
+    for (let c = 0; c <= last && !vsStop && dev; c++, done++){
+      $('vsHint').textContent = `Reading code ${c} of ${last}… ${vsFound.length} found so far.`;
+      let r;
+      try { r = await cmd(33, [c, c, c, c], { raw:true, quiet:true }); fails = 0; }
+      catch(e){ if (++fails >= 3) throw new Error(`Stopped at code ${c}: ${e.message}`); continue; }
+      const rc = r.status[0];
+      if (rc === 64) throw new Error('This device does not support Command 33 (read device variables).');
+      if ((rc !== 0 && rc !== 8 && rc !== 14) || r.data.length < 6 || r.data[0] !== c) continue;
+      const units = r.data[1], value = f32(r.data, 2);
+      if (!isFinite(value) && units >= 250){ empty++; continue; }   // the device answered but the variable is not used
+      vsFound.push({ code:c, units, value, reads:1 });
+      renderVarScan();
+    }
+    $('vsHint').textContent = `${vsStop ? `Stopped after ${done} code${done === 1 ? '' : 's'}` : `Scanned codes 0–${last}`}: ${vsFound.length} variable${vsFound.length === 1 ? '' : 's'} found`
+      + (empty ? `, ${empty} more answered as not used` : '') + '. "Read again" shows which values are moving.';
+  });
+}
+
+function refreshVarScan(){
+  return vsPause(async () => {
+    for (let i = 0; i < vsFound.length && !vsStop && dev; i += 4){
+      const part = vsFound.slice(i, i + 4), codes = part.map(v => v.code);
+      while (codes.length < 4) codes.push(codes[codes.length - 1]);
+      const r = await cmd(33, codes, { quiet:true });
+      part.forEach((v, k) => {
+        const o = k * 6; if (o + 6 > r.data.length || r.data[o] !== v.code) return;
+        const was = vsValue(v), units = r.data[o + 1], value = f32(r.data, o + 2);
+        v.reads++; v.changed = units !== v.units || !(value === v.value || (isNaN(value) && isNaN(v.value)));
+        v.was = was; v.units = units; v.value = value;
+      });
+      renderVarScan();
+    }
+    const moved = vsFound.filter(v => v.changed).length;
+    $('vsHint').textContent = `Read ${vsFound.length} variable${vsFound.length === 1 ? '' : 's'} again: ${moved} changed. Values that move are measurements; values that stay put while the process moves are settings or fixed.`;
+  });
 }
 
 function dvLabel(v){ return `DV ${v.code}: ${DV_CLASS[v.cls] ?? 'Class ' + v.cls}`; }
@@ -1708,7 +1799,7 @@ log(`serial=${'serial' in navigator} usb=${'usb' in navigator} android=${isAndro
 /* ================= App shell: navigation, install, theme, offline ================= */
 (() => {
 'use strict';
-const APP_VERSION = '4.10.0'; // must match VERSION in sw.js
+const APP_VERSION = '4.10.1'; // must match VERSION in sw.js
 const $ = id => document.getElementById(id);
 
 // Navigation
