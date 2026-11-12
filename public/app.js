@@ -199,8 +199,73 @@ function parseFrame(buf){
   return null;
 }
 
+/* ----- Burst mode detection -----
+   A device in burst mode publishes frames nobody asked for. They use delimiter 0x01 (short address)
+   or 0x81 (long address) where a normal reply uses 0x06 / 0x86 (HART data link layer). */
+let burst = null, burstStops = 0;   // burst: { long, addr, cmd, seen }
+function findBurst(buf){
+  for (let i = 2; i < buf.length; i++){
+    const d = buf[i];
+    if ((d !== 0x01 && d !== 0x81) || buf[i-1] !== 0xFF || buf[i-2] !== 0xFF) continue;
+    const addrLen = d & 0x80 ? 5 : 1, bcIdx = i + 1 + addrLen + 1;
+    if (buf.length <= bcIdx) return null;
+    const bc = buf[bcIdx], end = bcIdx + 1 + bc;
+    if (bc < 2 || buf.length <= end) continue;
+    let chk = 0; for (let k = i; k < end; k++) chk ^= buf[k];
+    if (chk !== buf[end]) continue;
+    return { long: addrLen === 5, addr: Array.from(buf.slice(i + 1, i + 1 + addrLen)), cmd: buf[i + 1 + addrLen] };
+  }
+  return null;
+}
+const burstKey = a => a.length === 5 ? [a[0] & 0x3F, ...a.slice(1)].join(',') : String(a[0] & 0x3F);
+const burstIsThisDevice = () => !!(burst && dev && burst.long && burstKey(burst.addr) === burstKey(dev.longAddr));
+function noteBurst(buf){
+  const b = findBurst(buf);
+  if (b){
+    if (!burst) log(`BURST frame seen: Command ${b.cmd} from ${hex(b.addr)}`);
+    burst = { ...b, seen: Date.now() };
+  } else if (burst && Date.now() - burst.seen > 30000) burst = null;   // nothing for 30 s: it has stopped
+  renderBurst();
+}
+function renderBurst(){
+  const el = $('burstBanner'); if (!el) return;
+  el.classList.toggle('hidden', !burst);
+  if (!burst) return;
+  const mine = burstIsThisDevice();
+  const who = mine ? 'This device is' : dev ? 'Another device on this loop is' : 'A device on this loop is';
+  $('burstText').textContent = `${who} in burst mode, sending Command ${burst.cmd} without being asked. Reads can be slow or fail while it does.${burstStops ? ' It was still sending after the last stop; a HART 7 device can have more than one burst message.' : ''}`;
+  const btn = $('btnBurstStop');
+  btn.classList.toggle('hidden', !burst.long);
+  btn.textContent = mine && dev.rev >= 7 && burstStops ? `Stop burst message ${burstStops}` : 'Stop burst mode';
+}
+// Turn burst mode off with common-practice Command 109 (data 0 = off). Goes through runWrite() like every write.
+async function stopBurst(){
+  if (!burst || !burst.long || !transport || cfgBusy) return;
+  const mine = burstIsThisDevice();
+  const msg = mine && dev.rev >= 7 ? burstStops : 0;
+  const data = msg ? [0, msg] : [0];
+  const wasLive = live; live = false;
+  while (liveRunning) await sleep(50);
+  const saved = dev;
+  // The bursting device may not be the one the app is reading (or none was found): address it from its own burst frame.
+  if (!mine) dev = { longAddr: [0x80 | (burst.addr[0] & 0x3F), ...burst.addr.slice(1)], stub: true };
+  let r = null;
+  try {
+    r = await runWrite({ label:'Stop burst mode', n:109, data, refresh:false,
+      lines:[`Device address ${hex(dev.longAddr)}`, `Command 109 (burst mode control), data ${hex(data)}: burst off${msg ? ` for burst message ${msg}` : ''}`,
+        'The device stops sending on its own. If a host or wireless adapter relies on the burst messages, it will stop getting them.'],
+      detail:`Command 109 data ${hex(data)} to ${hex(dev.longAddr)}.` });
+  } finally { dev = saved; }
+  if (r){
+    burstStops++; burst = null; renderBurst();
+    if (!dev){ await connectDevice(+$('addr').value); return; }
+  }
+  if (wasLive && dev){ live = true; liveLoop(); }
+}
+
 async function transact(fr, { quiet=false, timeout=900 } = {}){
   if (!transport) throw new Error('Not connected');
+  noteBurst(rxBuf);
   rxBuf = [];
   await transport.setRTS(true);
   if (!quiet) log(`TX ${hex(fr)}`, 'tx');
@@ -211,25 +276,36 @@ async function transact(fr, { quiet=false, timeout=900 } = {}){
   const t0 = performance.now();
   while (performance.now() - t0 < timeout){
     const r = parseFrame(rxBuf);
-    if (r && !r.incomplete){ record(rxBuf, 'rx'); if (!quiet) log(`RX ${hex(rxBuf)}`, 'rx'); return r; }
+    if (r && !r.incomplete){ record(rxBuf, 'rx'); if (!quiet) log(`RX ${hex(rxBuf)}`, 'rx'); noteBurst(rxBuf); return r; }
     await sleep(20);
   }
   if (rxBuf.length) record(rxBuf, 'rx');
+  noteBurst(rxBuf);
   log(rxBuf.length ? `RX invalid ${hex(rxBuf)}` : 'RX no reply', 'er');
   return null;
 }
 
-// Send a command with retries; returns { data, status } or throws
+// Send a command with retries; returns { data, status } or throws.
+// Command numbers above 255 (HART 6 and later) travel inside Command 31: the first two data bytes of the
+// request and of the reply are the 16-bit command number. cmd() adds and strips them.
 async function cmd(number, data=[], opts={}){
+  const ext = number > 255, wire = ext ? 31 : number, payload = ext ? [number >> 8, number & 255, ...data] : data;
   return exclusive(async () => {
     let last = 'No reply', dr = 0, bz = 0;
     for (let attempt = 0; attempt < 3; attempt++){
-      const fr = dev ? frame(0x82, dev.longAddr, number, data) : frame(0x02, [0x80 | (opts.poll & 0x3F)], number, data);
+      const fr = dev ? frame(0x82, dev.longAddr, wire, payload) : frame(0x02, [0x80 | (opts.poll & 0x3F)], wire, payload);
       const r = await transact(fr, opts);
       if (!r){ continue; }
       if (!r.chkOk){ last = 'Checksum error'; continue; }
-      if (r.cmd !== number){ last = `Reply to wrong command (${r.cmd})`; continue; }
+      if (r.cmd !== wire){ last = `Reply to wrong command (${r.cmd})`; continue; }
       const s0 = r.status[0];
+      if (ext && !(s0 & 0x80)){
+        if (r.data.length >= 2){
+          if (((r.data[0] << 8) | r.data[1]) !== number){ last = 'Reply to a different extended command'; continue; }
+          r.data = r.data.slice(2);
+        } else if (s0 === 0){ last = 'Extended command reply too short'; continue; }
+        r.cmd = number;
+      }
       if (s0 & 0x80){ last = `Communication error ${hx(s0)}`; continue; }
       if (s0 === 32){ last = 'Device busy'; if (opts.longBusy && bz++ < 100){ attempt--; await sleep(400); continue; } await sleep(300); continue; }
       if ((s0 === 33 || s0 === 34) && dr++ < 60){ last = 'Delayed response still running'; attempt--; await sleep(500); continue; }
@@ -499,6 +575,9 @@ async function connectDevice(poll){
     setPill(`Connected via ${transport?.label || ''}`, 'on');
     $('barDevice').textContent = 'No device';
     note(`No device answered at poll address ${poll}. Check the clips and loop resistance (250 Ω minimum), or scan addresses 0–15.`, true);
+    // A bursting device can drown out the first request. Listen briefly so the burst notice can offer to stop it.
+    if (transport && !burst){ await sleep(1500); noteBurst(rxBuf); }
+    if (burst) note('No device answered, but a device on this loop is sending burst messages. Stop burst mode with the button above, then the app reads the device again.', true);
   }
 }
 
@@ -542,6 +621,7 @@ async function disconnect(){
     setLoopFixed(null);
   }
   if (transport){ await transport.close(); transport = null; }
+  burst = null; burstStops = 0; renderBurst();
   dev = null;
   setPill('Disconnected');
   document.body.classList.remove('has-device');
@@ -1405,10 +1485,11 @@ const snTemplate = () => {
 
 function renderSensor(){
   const card = $('snCard');
-  if (!dev){ card.classList.add('hidden'); return; }
+  if (!dev){ card.classList.add('hidden'); renderFamily(false); return; }
   card.classList.remove('hidden');
   const p = prof?.profile;
   const has = !!p?.sensor;
+  renderFamily(has || measKind().kind === 'temperature');
   $('snNone').classList.toggle('hidden', has);
   $('snBody').classList.toggle('hidden', !has);
   const { kind } = measKind();
@@ -1446,6 +1527,38 @@ function renderSensor(){
   $('snWrite').disabled = !t || !snRead;
   $('snPreview').disabled = !t || !snRead;
   renderSnRead();
+}
+
+/* ----- Temperature device family read (Command 1025), read-only -----
+   The Rosemount 3144P revision 6 FDS (section 5.2) lists family Commands 1024-1027, 1152 and 1157 but not
+   their byte layouts; those are in the HART Temperature Device Family specification, which isn't on file.
+   The request byte (00) and the "byte 1 = type, byte 2 = wires" reading come from a third-party tool
+   (Songmao SM100-C configuration software), so this stays raw and read-only until a specification,
+   manufacturer document or capture confirms it. No names are given to the values and nothing is written. */
+function renderFamily(show){
+  const el = $('tfCard'); if (!el) return;
+  const on = !!(show && dev && dev.rev >= 7);
+  el.classList.toggle('hidden', !on);
+  if (!on || el.dataset.dev !== dev.devId){ $('tfOut').innerHTML = ''; tfMsg('', ''); el.dataset.dev = dev ? dev.devId : ''; }
+}
+function tfMsg(text, cls){ const n = $('tfNote'); n.textContent = text; n.className = 'cfgnote ' + (cls || ''); n.classList.toggle('hidden', !text); }
+async function readFamily(){
+  if (!dev) return;
+  $('tfRead').disabled = true; tfMsg('Reading with Command 1025…');
+  try {
+    const r = await pauseLive(() => cmd(1025, [0], { raw:true }));
+    const s0 = r.status[0], d = Array.from(r.data);
+    if (s0 && s0 !== 8){
+      $('tfOut').innerHTML = '';
+      tfMsg(`The device answered Command 1025 with "${r.rcText}".${s0 === 64 ? ' It doesn\'t support this family command.' : ''}`, 'bad');
+    } else {
+      const h2 = b => b.toString(16).toUpperCase().padStart(2, '0');
+      $('tfOut').innerHTML = `<div class="bytes">${d.map((b, i) => `<span title="Byte ${i}">${h2(b)}<small>${i}</small></span>`).join('')}</div>` +
+        (d.length >= 3 ? `<table class="kv"><tr><td>Byte 1 (type code in the third-party tool)</td><td class="mono">0x${h2(d[1])} (${d[1]})</td></tr><tr><td>Byte 2 (number of wires in the third-party tool)</td><td class="mono">${d[2]}</td></tr></table>` : '');
+      tfMsg(`Read ${d.length} bytes with Command 1025. Unconfirmed layout: compare with the sensor setup above or with the device's own display.`, 'ok');
+    }
+  } catch(e){ $('tfOut').innerHTML = ''; tfMsg(e.message, 'bad'); }
+  $('tfRead').disabled = false;
 }
 
 function syncWire(){
@@ -1585,7 +1698,7 @@ function conInfo(){
 async function sendConsole(){
   if (!dev) return;
   const n = parseInt($('conCmd').value, 10), data = parseHex($('conData').value);
-  if (!Number.isInteger(n) || n < 0 || n > 255 || n === 31) return conOut('Enter a command number from 0 to 255 (31 is the expansion command and isn\'t sent directly).', 'bad');
+  if (!Number.isInteger(n) || n < 0 || n > 65535 || n === 31 || n === 254 || n === 255) return conOut('Enter a command number from 0 to 253, or 256 to 65535 for an extended command (the app wraps those in Command 31 itself).', 'bad');
   if (data == null) return conOut('Data must be hex byte pairs, for example "01 04" or "0104".', 'bad');
   const d = H.describeCommand(n, conProfile());
   let r;
@@ -1807,6 +1920,8 @@ function bindTools(){
   $('snTplClear').onclick = () => { if (!prof) return; P.templates.remove(prof.profile.id, dev.devRev, isSim()); snMsg('Layout removed.', ''); renderSensor(); };
   $('mtSave').onclick = saveManualTemplate;
   $('conSend').onclick = sendConsole;
+  $('tfRead').onclick = readFamily;
+  $('btnBurstStop').onclick = stopBurst;
   $('conCmd').oninput = conInfo;
   $('conCmd').onkeydown = $('conData').onkeydown = e => { if (e.key === 'Enter') sendConsole(); };
 }
@@ -1870,7 +1985,7 @@ log(`serial=${'serial' in navigator} usb=${'usb' in navigator} android=${isAndro
 /* ================= App shell: navigation, install, theme, offline ================= */
 (() => {
 'use strict';
-const APP_VERSION = '4.11.0'; // must match VERSION in sw.js
+const APP_VERSION = '4.12.0'; // must match VERSION in sw.js
 const $ = id => document.getElementById(id);
 
 // Navigation
