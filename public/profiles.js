@@ -279,11 +279,18 @@ function ehFmr240r5() {
   const PARAMS = {
     0x002D: { name: 'Empty calibration (m)', confirmed: true, val: d => num(H.f32(d, 2)), len: 4 },
     0x003E: { name: 'Full calibration (m)', confirmed: true, val: d => num(H.f32(d, 2)), len: 4 },
-    0x0019: { name: 'Distance unit (matches Command 14, not checked on the 475)', val: d => `${H.unitName(d[2])} (${d[2]})`, len: 1 },
-    0x0055: { name: 'Maximum range (m) (matches Command 14 upper limit, not checked on the 475)', val: d => num(H.f32(d, 2)), len: 4 },
+    0x0019: { name: 'Distance unit (matches Command 14, not checked on the 475)', short: 'Distance unit', val: d => `${H.unitName(d[2])} (${d[2]})`, len: 1 },
+    0x0055: { name: 'Maximum range (m) (matches Command 14 upper limit, not checked on the 475)', short: 'Maximum range (m)', val: d => num(H.f32(d, 2)), len: 4 },
   };
   const idx = d => (d[0] << 8) | d[1];
   const hex4 = n => '0x' + n.toString(16).toUpperCase().padStart(4, '0');
+  // One reply as a row for the live parameter list: named where the index is known, raw otherwise.
+  ehFmr240r5.describe = d => {
+    const i = idx(d), p = PARAMS[i], v = d.slice(2);
+    if (p && v.length === p.len) return { index: hex4(i), name: p.short || p.name, text: String(p.val(d)), confirmed: !!p.confirmed, known: true };
+    const text = v.length === 1 ? String(v[0]) : v.length === 2 ? String((v[0] << 8) | v[1]) : v.length === 4 ? `${num(H.f32(d, 2))} as a float` : H.toHex(v);
+    return { index: hex4(i), name: null, text, raw: H.toHex(v), known: false };
+  };
   return {
     172: {
       name: 'Read parameter by index', rw: 'r', confidence: 'partial',
@@ -415,6 +422,12 @@ const PROFILES = [
     revisions: { 5: { hart: 5, documented: false, note: 'Device revision 5: empty and full calibration (Command 172) were decoded from a capture of a 475 Field Communicator and checked against its screen. Other Command 172 parameters are shown raw. No device-specific writes are defined.' } },
     sensor: null, commands: {},
     captured: { 5: ehFmr240r5() },
+    // Live reads: only the exact Command 172 requests the 475 was seen sending as reads in the capture
+    // of 12 Nov 2026 (each reply was index + value, with no configuration change). Nothing else is sent.
+    indexed: { 5: { cmd: 172, describe: d => ehFmr240r5.describe(d),
+      indexes: [0x002D, 0x003E, 0x0019, 0x0055, 0x0000, 0x000D, 0x0021, 0x0022, 0x0023, 0x0024, 0x002E, 0x0035, 0x0037,
+        0x006B, 0x006C, 0x0072, 0x007E, 0x00CA, 0x00CB, 0x00F4, 0x01C1, 0x01C2, 0x02DF],
+      source: 'a capture of a 475 Field Communicator' } },
   },
 ];
 

@@ -479,7 +479,7 @@ async function connectDevice(poll){
   while (liveRunning) await sleep(50);
   $('scanList').innerHTML = '';
   dev = null; lastDeviceStatus = null; cmd48Data = null; st = null; $('stBody').classList.add('hidden');
-  prof = null; snRead = null; ['profCard','snCard','conCard','rptCard'].forEach(id => $(id).classList.add('hidden')); $('snBytes').classList.add('hidden'); $('conResult').classList.add('hidden');
+  prof = null; snRead = null; ['profCard','snCard','conCard','rptCard','ixCard'].forEach(id => $(id).classList.add('hidden')); $('snBytes').classList.add('hidden'); $('conResult').classList.add('hidden');
   dvList = null; dvMap = null; $('dvBody').classList.add('hidden'); $('dvList').innerHTML = ''; $('dvLoad').textContent = 'Load'; resetVarScan();
   $('dvHint').textContent = 'Reads every device variable with its type, live value, status and limits (HART Commands 9, 50 and 54).';
   setPill('Reading device…', 'busy');
@@ -547,7 +547,7 @@ async function disconnect(){
   document.body.classList.remove('has-device');
   $('barDevice').textContent = 'No device';
   $('btnConnect').disabled = false; $('btnScan').disabled = true; $('btnDisc').disabled = true;
-  ['liveCard','statusCard','devCard','rangeCard','cfgCard','dvCard','profCard','snCard','conCard','vsCard'].forEach(id => $(id).classList.add('hidden'));
+  ['liveCard','statusCard','devCard','rangeCard','cfgCard','dvCard','profCard','snCard','conCard','vsCard','ixCard'].forEach(id => $(id).classList.add('hidden'));
   prof = null; snRead = null;
   $('scanList').innerHTML = '';
   note('Disconnected.');
@@ -1015,6 +1015,8 @@ function bindWrites(){
   $('vsAll').onclick = () => scanVariables(249);
   $('vsRefresh').onclick = refreshVarScan;
   $('vsStop').onclick = () => { vsStop = true; };
+  $('ixRead').onclick = readIndexed;
+  $('ixStop').onclick = () => { ixStop = true; };
   $('dmWrite').onclick = writeDvMapping;
   $('stCheck').onclick = checkSensorTrim;
   $('stLowBtn').onclick = () => sensorTrim(1);
@@ -1196,6 +1198,74 @@ function refreshVarScan(){
     const moved = vsFound.filter(v => v.changed).length;
     $('vsHint').textContent = `Read ${vsFound.length} variable${vsFound.length === 1 ? '' : 's'} again: ${moved} changed. Values that move are measurements; values that stay put while the process moves are settings or fixed.`;
   });
+}
+
+/* ---------- Device parameters read by index ----------
+   Some devices read their settings through one device-specific command that takes a parameter index.
+   The app only sends the exact requests listed in the device profile, which were seen being used as
+   reads by the manufacturer's or a handheld's software in a capture. Read-only; no index is guessed. */
+let ixRows = [], ixStop = false, ixBusy = false, ixFor = '';
+const ixSpec = () => prof && dev && !isSim() ? prof.profile.indexed?.[dev.devRev] || null : null;
+
+function renderIndexed(){
+  const spec = ixSpec(), key = spec ? `${prof.profile.id}|${dev.devRev}|${Array.from(dev.longAddr || []).join('.')}` : '';
+  $('ixCard').classList.toggle('hidden', !spec);
+  if (key !== ixFor){ ixFor = key; ixRows = []; $('ixList').innerHTML = ''; $('ixHint').textContent = ''; $('ixRead').textContent = 'Read parameters'; }
+  if (spec) $('ixIntro').textContent = `Reads ${spec.indexes.length} settings from this ${prof.profile.model} with device-specific Command ${spec.cmd}. These are the same read requests seen in ${spec.source}, and nothing else is sent. Parameters without a name haven't been identified yet: compare the values with the device's display or the handheld.`;
+}
+
+function drawIndexed(){
+  const ul = $('ixList'); ul.innerHTML = '';
+  ixRows.forEach(r => {
+    const li = document.createElement('li'); li.className = r.error ? 'bad' : r.changed ? 'uncertain' : r.confirmed ? 'good' : '';
+    li.innerHTML = '<div class="dvtop"><span class="dvname"></span><span class="dvval"></span></div><div class="dvstat"></div>';
+    li.querySelector('.dvname').textContent = r.name || `Index ${r.index}`;
+    li.querySelector('.dvval').textContent = r.error ? '—' : r.text;
+    li.querySelector('.dvstat').textContent = r.error ? `Index ${r.index} · ${r.error}` : [
+      r.name ? `Index ${r.index}` : 'Not yet identified', r.raw ? `raw ${r.raw}` : '',
+      r.confirmed ? 'Checked against the handheld' : r.known ? 'Matches a universal command, not checked on the handheld' : '',
+      r.changed ? `Changed since the last read (was ${r.was})` : ''].filter(Boolean).join(' · ');
+    ul.appendChild(li);
+  });
+}
+
+async function readIndexed(){
+  const spec = ixSpec();
+  if (!spec || cfgBusy || ixBusy) return;
+  ixBusy = true; ixStop = false; setCfgBusy(true);
+  $('ixRead').disabled = true; $('ixStop').classList.remove('hidden');
+  const wasLive = live; live = false;
+  while (liveRunning) await sleep(50);
+  const before = new Map(ixRows.map(r => [r.index, r])), rows = [];
+  let fails = 0, msg = '';
+  try {
+    for (let k = 0; k < spec.indexes.length && !ixStop && dev; k++){
+      const i = spec.indexes[k], index = hx(i, 4);
+      $('ixHint').textContent = `Reading ${k + 1} of ${spec.indexes.length}…`;
+      let row;
+      try {
+        const r = await cmd(spec.cmd, [i >> 8, i & 255], { raw:true, quiet:true }); fails = 0;
+        const rc = r.status[0];
+        if (rc === 64) throw Object.assign(new Error(`This device does not support Command ${spec.cmd}.`), { fatal:true });
+        if (rc !== 0 && rc !== 8 && rc !== 14) row = { index, error: r.rcText };
+        else if (r.data.length < 3 || r.data[0] !== (i >> 8) || r.data[1] !== (i & 255)) row = { index, error: 'Unexpected reply' };
+        else row = spec.describe(r.data);
+      } catch(e){
+        if (e.fatal) throw e;
+        if (++fails >= 3) throw new Error(`Stopped at index ${index}: ${e.message}`);
+        row = { index, error: e.message.replace(/^Command \d+: /,'') };
+      }
+      const old = before.get(row.index);
+      if (old && !old.error && !row.error && old.text !== row.text){ row.changed = true; row.was = old.text; }
+      rows.push(row); ixRows = rows; drawIndexed();
+    }
+    const ok = rows.filter(r => !r.error).length;
+    msg = `${ixStop ? 'Stopped. ' : ''}${ok} of ${rows.length} parameters read${before.size ? `, ${rows.filter(r => r.changed).length} changed since the last read` : ''}.`;
+  } catch(e){ msg = e.message.replace(/^Command \d+: /,''); }
+  $('ixHint').textContent = msg;
+  $('ixRead').textContent = 'Read again'; $('ixRead').disabled = false; $('ixStop').classList.add('hidden');
+  ixBusy = false; setCfgBusy(false);
+  if (wasLive && dev){ live = true; liveLoop(); }
 }
 
 function dvLabel(v){ return `DV ${v.code}: ${DV_CLASS[v.cls] ?? 'Class ' + v.cls}`; }
@@ -1488,6 +1558,7 @@ const conHistory = [];
 
 function renderConsole(){
   $('conCard').classList.toggle('hidden', !dev);
+  renderIndexed();
   const dl = $('conList');
   if (!dl.options.length || dl.dataset.prof !== (prof?.profile.id || '')){
     const all = { ...Object.fromEntries(Object.entries(H.COMMANDS).map(([n, c]) => [n, c.name])) };
@@ -1799,7 +1870,7 @@ log(`serial=${'serial' in navigator} usb=${'usb' in navigator} android=${isAndro
 /* ================= App shell: navigation, install, theme, offline ================= */
 (() => {
 'use strict';
-const APP_VERSION = '4.10.1'; // must match VERSION in sw.js
+const APP_VERSION = '4.11.0'; // must match VERSION in sw.js
 const $ = id => document.getElementById(id);
 
 // Navigation
