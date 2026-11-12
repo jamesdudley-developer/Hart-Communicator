@@ -1799,7 +1799,7 @@ log(`serial=${'serial' in navigator} usb=${'usb' in navigator} android=${isAndro
 /* ================= App shell: navigation, install, theme, offline ================= */
 (() => {
 'use strict';
-const APP_VERSION = '4.10.0'; // must match VERSION in sw.js
+const APP_VERSION = '4.10.1'; // must match VERSION in sw.js
 const $ = id => document.getElementById(id);
 
 // Navigation
