@@ -31,6 +31,7 @@
 </header>
 
 <div class="banner hidden" id="fixedBanner" role="status"><span id="fixedText">Loop current fixed</span><button id="btnBannerExit">Exit loop test</button></div>
+<div class="banner burst hidden" id="burstBanner" role="status"><span id="burstText">A device is in burst mode</span><button id="btnBurstStop">Stop burst mode</button></div>
 <div class="toast hidden" id="updateToast" role="status"><span>A new version is ready.</span><button id="btnUpdate">Update</button></div>
 
 <nav class="tabs" aria-label="Sections">
@@ -86,6 +87,31 @@
     </div>
     <ul class="scanlist" id="scanList"></ul>
     <p class="note" id="connNote">Clip onto the loop, plug in the modem, then connect.</p>
+    <details id="wiringHelp">
+      <summary>Modem wiring help (Wishcolor SMC-100C / Songmao SM100-C)</summary>
+      <div class="body">
+        <p class="hint">The modem has a three-position slide switch that decides what it adds to the loop. Pick the position first, then connect the clips. A HART loop needs at least 250 Ω somewhere in it.</p>
+        <div class="wire">
+          <h3>Switch at 250Ω: the modem adds a 250 Ω resistor</h3>
+          <p>The modem goes <b>in series</b> with the loop, so its resistor becomes the loop resistor.</p>
+          <ul>
+            <li>2-wire transmitter on a powered loop: supply + to modem +, modem − to transmitter +, transmitter − back to the analogue input.</li>
+            <li>4-wire transmitter on the bench: modem + to output +, modem − to output −.</li>
+            <li>4-wire transmitter into an input card: input to modem +, modem − to transmitter +, transmitter − to input common.</li>
+          </ul>
+        </div>
+        <div class="wire">
+          <h3>Switch in the middle: the modem adds nothing</h3>
+          <p>The modem goes <b>in parallel</b>, across the transmitter terminals. Use this when the loop already has 250 Ω or more, which is the usual case on a working plant loop.</p>
+        </div>
+        <div class="wire">
+          <h3>Switch at 24V/250Ω: the modem adds a 24 V supply and a 250 Ω resistor</h3>
+          <p>For a <b>2-wire transmitter with no other power supply</b> on the bench: modem + to transmitter +, modem − to transmitter −. The modem powers the transmitter from USB. The maker's manual shows this position only with an unpowered transmitter, so don't use it on a loop that is already powered.</p>
+        </div>
+        <p class="hint">The second switch (USB / WIFI) must be on <b>USB</b> for this app. The modem's lights: POW is lit in normal operation, TXD flashes when the app sends, RXD flashes when the device answers. TXD with no RXD usually means the switch position or the loop resistance is wrong.</p>
+        <p class="hint">Source: Songmao SM100-C (III) user manual, 21 Feb 2025, section 2.2 and 2.3.</p>
+      </div>
+    </details>
   </section>
 
   <section class="hero hidden" id="liveCard">
@@ -399,6 +425,15 @@
         </div>
       </details>
     </div>
+    <details id="tfCard" class="hidden">
+      <summary>Temperature family read (Command 1025), unconfirmed</summary>
+      <div class="body tool">
+        <p class="hint">HART 7 temperature transmitters can also report the sensor through the standard temperature family commands. This sends Command 1025 with one data byte (00) and shows the reply as raw bytes. It only reads. The request byte and the meaning of the reply bytes come from a third-party configuration tool, not from a HART specification or the manufacturer, so the app doesn't name the values and doesn't offer a write with Command 1152.</p>
+        <div class="btns"><button id="tfRead">Read with Command 1025</button></div>
+        <div id="tfOut"></div>
+        <div class="cfgnote hidden" id="tfNote"></div>
+      </div>
+    </details>
   </section>
 
   <section class="panel hidden" id="ixCard">
@@ -416,7 +451,7 @@
     <h2>Command console</h2>
     <p class="hint">Send any HART command and see the decoded reply. Reads go straight out. Writes, actions and unknown commands ask you to confirm first.</p>
     <div class="row2 tool" style="margin-top:12px">
-      <label>Command number<input type="number" id="conCmd" min="0" max="255" list="conList" inputmode="numeric" value="13"></label>
+      <label>Command number<input type="number" id="conCmd" min="0" max="65535" list="conList" inputmode="numeric" value="13"></label>
       <label>Request data (hex)<input type="text" id="conData" placeholder="blank if none" spellcheck="false" autocapitalize="characters"></label>
     </div>
     <datalist id="conList"></datalist>

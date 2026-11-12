@@ -52,6 +52,12 @@ svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-l
 .banner{position:sticky;top:calc(env(safe-area-inset-top,0px) + var(--appbar-h));z-index:15;background:var(--accent);color:var(--accent-ink);
   padding:10px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px;font-weight:600}
 .banner button{border-color:var(--accent-ink);color:var(--accent-ink);min-height:36px;padding:5px 12px}
+.banner.burst{position:static;background:var(--surface-2);color:var(--ink,inherit);border-left:4px solid var(--warn);font-weight:500;font-size:.92rem}
+.banner.burst button{border-color:currentColor;color:inherit;flex:none}
+.wire{border-top:1px solid var(--line);padding:10px 0 2px}
+.wire h3{font-size:.95rem;margin:0 0 4px}
+.wire p,.wire li{font-size:.9rem;margin:0 0 6px}
+.wire ul{margin:0 0 6px;padding-left:20px}
 .toast{position:fixed;z-index:30;left:50%;transform:translateX(-50%);bottom:calc(var(--tabs-h) + env(safe-area-inset-bottom,0px) + 12px);
   background:var(--bar);color:var(--bar-ink);border-radius:12px;padding:10px 10px 10px 16px;display:flex;align-items:center;gap:14px;
   box-shadow:0 8px 24px rgba(0,0,0,.25);width:max-content;max-width:calc(100vw - 24px)}

@@ -27,6 +27,7 @@ Cloudflare Pages, build output directory `public`. `wrangler.jsonc` is only used
 - Lookup tables near the top: `UNITS` (HART unit codes), `MFR` (manufacturer IDs), `TRANSFER`, `ALARM`, `RESP`/`RESP_CMD` (response codes), `STATUS_BITS`, `EXT_BITS`.
 - Transports: `SerialTransport` (Web Serial) and `UsbSerialTransport` (WebUSB, drives the modem's USB chip through `usb-serial.js`). Both run **1200 baud, 8 data bits, odd parity, 1 stop bit**. Don't change these.
 - Framing: `frame()`, `parseFrame()`, `transact()`, `cmd()`. All bus traffic goes through `exclusive()` so only one transaction runs at a time; keep it that way.
+- `cmd()` sends command numbers above 255 inside Command 31 (16-bit number as the first two data bytes, both directions). Burst detection: `findBurst()`, `noteBurst()` (called from `transact()`), `stopBurst()` (Command 109 through `runWrite()`).
 - Device: `identify()`, `loadDetails()`, `scan()` (poll addresses 0–15), `liveLoop()`.
 - Writes: `runWrite()` handles confirmation and the change history. `raw: true` returns the reply even for error response codes (used by the console).
 - `SimTransport` drives the simulator in `sim.js`. `record()` keeps every byte sent and received for the Capture tab.
