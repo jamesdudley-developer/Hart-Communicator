@@ -73,6 +73,15 @@ function handle(d, cmd, q) {
       }
       return [0, out];
     }
+    case 33: {
+      // Common-practice Command 33: code 0 is the PV; the temperature device also has code 1 (terminal temperature).
+      const out = [];
+      for (const c of q.slice(0, 4)) {
+        if (c > (d.name === 'temperature' ? 1 : 0)) return [2, []];
+        out.push(c, c === 0 ? d.units : 32, ...fb(c === 0 ? pv : 24.1 + Math.random() * 0.05));
+      }
+      return [0, out];
+    }
     case 12: return [0, H.packAscii(d.msg, 24)];
     case 13: return [0, [...H.packAscii(d.tag, 6), ...H.packAscii(d.desc, 12), ...d.date]];
     case 14: return [0, [...id3(d.id), d.units, ...fb(d.pvLimits.hi), ...fb(d.pvLimits.lo), ...fb(d.pvLimits.minSpan)]];
