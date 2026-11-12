@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.11.0
+
+- **Read settings from the Endress+Hauser Micropilot FMR240 (device revision 5).** This radar doesn't answer the generic variable commands (33 and 54), so its settings are only reachable through its own Command 172. Tools → **Device parameters** now reads 23 settings live with Command 172, using only the exact read requests a 475 Field Communicator was seen sending in the capture of 12 Nov 2026. Nothing else is sent and nothing is written.
+  - **Empty calibration** and **full calibration** are named and shown in metres (both checked against the 475). **Distance unit** and **maximum range** are named from their match with universal Command 14.
+  - The other 19 are listed by index with their value, marked "Not yet identified", so they can be compared with the device's display or the handheld.
+  - **Read again** marks any value that changed since the last read.
+  - The panel only appears on a real device whose profile lists read requests taken from a capture.
+
 ## 4.10.1
 
 - **Variable scan (Variables tab).** Works on any HART device, including HART 5 devices and devices with no profile. The app asks for each variable code in turn with common-practice Command 33 (read device variables, read-only) and lists every code the device answers, with its value and unit. **Scan codes 0–31** is the quick pass; **Scan all codes (0–249)** takes a few minutes at HART speed and can be stopped. **Read again** re-reads the codes found and marks the ones whose value changed, which separates live measurements from fixed values. Codes mapped to PV, SV, TV or QV are tagged when the device answers Command 50. Names aren't shown because they exist only in the manufacturer's DD. The simulator answers Command 33 for practice.
